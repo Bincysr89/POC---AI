@@ -84,7 +84,7 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
       v('29 Nov 18:20', 'Status agent', 'agent', `Marine traffic (AIS) shows ${vesselShort()} about 8 h behind the line's ETA; revised ETA ${VESSEL.revised}`, 'marinetraffic.ais', 'Delay found'),
       v('29 Nov 18:22', 'Status agent', 'agent', 'Told you and moved the DO, permit and haulage plans to the new arrival time', 'notify.user', 'Sent'),
     ] },
-    { id: 'v2', t: 'Vessel arrived (ATA)', who: 'Port · DP World', kind: 'external', ticks: 8, log: [v(`30 Nov ${VESSEL.ataTime}`, 'DP World', 'external', `Vessel arrived at Jebel Ali T3, ${VESSEL.late} after the line's ETA`, 'portcall.status', 'Arrived late')] },
+    { id: 'v2', t: 'Vessel arrived (ATA)', who: 'DP World', kind: 'external', ticks: 8, log: [v(`30 Nov ${VESSEL.ataTime}`, 'DP World', 'external', `Vessel arrived at Jebel Ali T3, ${VESSEL.late} after the line's ETA`, 'portcall.status', 'Arrived late')] },
     ...CONTAINERS.map((k, i) => ({ id: `v3-${i}`, t: 'Containers discharged', who: 'Status agent', kind: 'agent' as Kind, show: i === 0,
       log: [v(k.at, 'Status agent', 'agent', `${k.no} discharged, no holds`, 'container.status', 'Discharged')] })),
   ] },
@@ -92,7 +92,7 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
     { id: 'd1', t: 'Draft DO request created', who: 'DO agent', kind: 'agent', log: [d('24 Nov 09:35', 'DO agent', 'agent', `Drafted DO request for ${n} containers with line charges`, 'do.draft', 'Draft ready')] },
     { id: 'd2', t: 'Review, set validity date and pay', who: 'You', kind: 'you', gate: 'do' },
     { id: 'd3', t: 'Sent to the shipping agent', who: 'DO agent', kind: 'agent', log: [d('24 Nov 10:03', 'DO agent', 'agent', `Submitted the paid request to ${ACTIVE.c.line} via Trade+`, 'do.submit', 'Submitted')] },
-    { id: 'd4', t: 'Delivery order released', who: 'Shipping agent', kind: 'external',
+    { id: 'd4', t: 'Delivery order released', who: ACTIVE.c.line, kind: 'external',
       requires: i => (i.V < TRACKS.V.steps.length ? 'Released once all containers are discharged' : null),
       log: [d('30 Nov 18:40', ACTIVE.c.line, 'external', `Released DO-27-41902 for ${n} containers`, 'do.status', 'Released')] },
   ] },
@@ -279,7 +279,7 @@ function SlotPicker({ value, onChange, need }: { value: SlotPick; onChange: (p: 
 /* Track progress inside a card. Deliberately NOT a second stepper: the journey
  * stepper at the top is the only stepper. Cards show a slim progress bar and,
  * when opened, a numbered checklist of the steps. */
-type FlowItem = { id: string; st: DotSt; kind: Kind; label: string };
+type FlowItem = { id: string; st: DotSt; kind: Kind; label: string; who: string };
 const SEG: Record<DotSt, string> = { done: '#28a745', you: '#f2b200', run: '#1360d2', blocked: '#9aa6bf', wait: '#e3e8ef' };
 function StepBar({ items }: { items: FlowItem[] }) {
   const done = items.filter(i => i.st === 'done').length;
@@ -292,13 +292,14 @@ function StepBar({ items }: { items: FlowItem[] }) {
     </div>
   );
 }
-const WHO = (k: Kind) => (k === 'you' ? { t: 'You', c: '#8a5a00' } : k === 'external' ? { t: 'Authority', c: '#0f4fab' } : { t: 'AI agent', c: '#1360d2' });
+/* Who does the step: the named agent, authority or partner (not just 'AI agent') */
+const WHO = (k: Kind, name: string) => ({ t: k === 'you' ? 'You' : name, c: k === 'you' ? '#8a5a00' : k === 'external' ? '#0f4fab' : '#1360d2' });
 function StepChecklist({ items, cols }: { items: FlowItem[]; cols?: boolean }) {
   return (
     <ol className={cols ? 'sm:columns-2 gap-x-4' : ''}>
       {items.map((it, i) => {
         const cur = it.st === 'you' || it.st === 'run' || it.st === 'blocked';
-        const who = WHO(it.kind);
+        const who = WHO(it.kind, it.who);
         const dot = it.st === 'done' ? { bg: '#28a745', fg: '#fff', b: 'none' } : it.st === 'you' ? { bg: '#f2b200', fg: '#fff', b: 'none' } : it.st === 'run' ? { bg: '#e6f0ff', fg: C.blue, b: 'none' } : it.st === 'blocked' ? { bg: '#edf0f4', fg: C.muted, b: 'none' } : { bg: '#fff', fg: C.muted, b: '1.5px solid #c9d4ec' };
         return (
           <li key={it.id} className="break-inside-avoid flex items-center gap-[10px] rounded-[10px] px-[10px] py-[7px]"
@@ -307,7 +308,7 @@ function StepChecklist({ items, cols }: { items: FlowItem[]; cols?: boolean }) {
               {it.st === 'done' ? <Icon name="check" size={13} strokeWidth={2.8} /> : it.st === 'run' ? <span className="ai-spin" /> : it.st === 'blocked' ? <Icon name="clock" size={13} /> : it.st === 'you' ? <Icon name="person" size={13} /> : i + 1}
             </span>
             <span className="flex-1 min-w-0 text-[14px] leading-snug" style={{ color: it.st === 'wait' ? C.muted : C.text, fontWeight: cur ? 700 : 500 }}>{it.label}</span>
-            <span className="text-[14px] whitespace-nowrap" style={{ color: who.c, fontWeight: 600 }}>{who.t}</span>
+            <span className="text-[14px] text-right leading-snug max-w-[48%] flex-shrink-0" style={{ color: who.c, fontWeight: 600 }}>{who.t}</span>
           </li>
         );
       })}
@@ -491,7 +492,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
 
   /* Steps of a track, in plain words */
   const flowItems = (k: TrackKey): FlowItem[] => stepsFor(k).map(({ s, st }) => ({
-    id: s.id, st, kind: s.kind,
+    id: s.id, st, kind: s.kind, who: s.who,
     label: s.id === 'v3-0' ? `${SHORT[s.id]} · ${Math.min(NC, Math.max(0, idx.V - ARR))}/${NC}` : SHORT[s.id] ?? s.t,
   }));
 
