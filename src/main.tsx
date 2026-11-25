@@ -5,6 +5,7 @@ import './index.css';
 import LoginPage from './pages/LoginPage';
 import OtherAgentTypePage from './pages/OtherAgentTypePage';
 import LandingPage from './pages/LandingPage';
+import ImportPage from './pages/ImportPage';
 import { RequireAuth } from './auth';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -15,6 +16,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Route path="/login" element={<LoginPage />} />
         <Route path="/customer-type" element={<Navigate to="/landing/trader" replace />} />
         <Route path="/other-agent-type" element={<RequireAuth><OtherAgentTypePage /></RequireAuth>} />
+        <Route path="/landing/:agent/import" element={<RequireAuth><ImportPage /></RequireAuth>} />
         <Route path="/landing/:agent" element={<RequireAuth><LandingPage /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

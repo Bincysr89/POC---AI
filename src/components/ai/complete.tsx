@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import qrcode from 'qrcode-generator';
 import { DhAmount } from '../Dh';
 import type { CaseDoc } from './docs';
+import { ACTIVE } from './data';
 import { Btn, C, Icon, Pill } from './ui';
 
 export type CompletionSummary = {
@@ -73,7 +74,7 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
   useEffect(() => { const t = setTimeout(() => setStage(2), 1800); return () => clearTimeout(t); }, []);
 
   const issued: DL[] = [
-    { id: 'do', abbr: 'DO', title: 'Delivery order', ref: 'DO-27-41902', from: 'Mediterranean Shipping', meta: `${containers.length} containers` },
+    { id: 'do', abbr: 'DO', title: 'Delivery order', ref: 'DO-27-41902', from: ACTIVE.c.line, meta: `${containers.length} containers` },
     { id: 'dm', abbr: 'DM', title: 'Food import permit', ref: 'DM-PRM-27-55120', from: 'Dubai Municipality', meta: 'HS 2106.90' },
     { id: 'sira', abbr: 'SIRA', title: 'Security equipment permit', ref: 'SIRA-27-08841', from: 'SIRA', meta: 'HS 8525.89' },
     { id: 'decl', abbr: 'DEC', title: 'Import declaration', ref: '101-27-0049310', from: 'Dubai Customs', meta: 'Cleared · green channel' },
@@ -128,7 +129,7 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
           <DoneMark />
           <p className="ai-rise text-[22px] text-[#0e1b3d] mt-4" style={{ fontWeight: 700, animationDelay: '.35s' }}>Your import journey is on track</p>
           <p className="ai-rise text-[15px] text-[#40484f] mt-1 max-w-[620px]" style={{ animationDelay: '.5s' }}>
-            DO released, permits approved, customs cleared and eToken issued for IMP-2027-00422. We'll keep tracking your delivery until the containers reach your warehouse.
+            DO released, permits approved, customs cleared and eToken issued for {ACTIVE.c.caseId}. We'll keep tracking your delivery until the containers reach your warehouse.
           </p>
           <div className="ai-rise flex flex-wrap justify-center gap-2 mt-4" style={{ animationDelay: '.65s' }}>
             {['Vessel Operations', 'Trade+', 'Integrated Clearance', 'Cargo Waves'].map(t => (
@@ -207,7 +208,7 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
         {/* Scan to download on a phone */}
         <div className="flex items-center gap-3 rounded-[14px] p-3 border" style={{ borderColor: '#dbe6f7', background: 'linear-gradient(135deg,#f6f9ff,#ffffff)' }}>
           <span className="rounded-[10px] p-[6px] bg-white border flex-shrink-0" style={{ borderColor: '#e3e8f3' }}>
-            <QRCode text="https://www.dubaitrade.ae/m/case/IMP-2027-00422/documents?k=8F3K2Q" size={120} />
+            <QRCode text={`https://www.dubaitrade.ae/m/case/${ACTIVE.c.caseId}/documents?k=8F3K2Q`} size={120} />
           </span>
           <span className="max-w-[190px]">
             <span className="flex items-center gap-2 text-[14px] text-[#111838]" style={{ fontWeight: 700 }}><Icon name="download" size={15} className="text-[#1360d2]" />Scan to download on your phone</span>

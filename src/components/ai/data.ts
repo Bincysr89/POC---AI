@@ -252,3 +252,54 @@ export const JOURNEY_AGENTS: { plan: string; track: string; agents: { name: stri
   ] },
   { plan: 'etoken', track: 'Cargo Waves', agents: [{ name: 'CargoWaves agent', job: 'Books Al Bahar Transport, your contracted haulier' }] },
 ];
+
+/* ── Active import case ──────────────────────────────────────────────
+ * The journey, documents and completion screens read the case they show
+ * from here, so a delivery order or clearance started from another BL
+ * shows that BL throughout. */
+export type Permit = { agent: string; entity: string; type: string; hs: string; item: string; qty: string; fee: string; ref: string };
+export type HsLine = { hs: string; d: string; permit: string };
+export type CaseMeta = { caseId: string; bl: string; vessel: string; origin: string; line: string; manifest: string; permits?: Permit[]; hs?: HsLine[]; permitPay?: string };
+export const DEFAULT_CASE: CaseMeta = { caseId: 'IMP-2027-00422', bl: 'MEDU48210937', vessel: 'MV Sample Voyager · 027E', origin: 'Shanghai', line: 'Mediterranean Shipping', manifest: 'MSC-027E-JEA-118' };
+export const ACTIVE: { c: CaseMeta } = { c: DEFAULT_CASE };
+export const setActiveCase = (m: CaseMeta) => { ACTIVE.c = m; };
+
+/* Bills of lading whose delivery order request the DO agent has drafted */
+export type DoDraft = CaseMeta & { containers: string[]; size: string; status: string; drafted: string };
+export const DO_DRAFTS: DoDraft[] = [
+  { caseId: 'IMP-2027-00418', bl: 'MEDU48210937', line: 'Mediterranean Shipping', vessel: 'MV Sample Voyager · 027E', origin: 'Shanghai', manifest: 'MSC-027E-JEA-118', containers: ['MSKU0000001', 'MSKU0000002', 'MSKU0000003'], size: "40' HC", status: 'Discharged today', drafted: 'Today, 11:43' },
+  { caseId: 'IMP-2027-00425', bl: 'HLCU21904416', line: 'Hapag-Lloyd', vessel: 'Al Nefud · 041W', origin: 'Hamburg', manifest: 'HLC-041W-JEA-207', containers: ['HLXU8812045', 'HLXU8812046'], size: "40' HC", status: 'Discharged yesterday', drafted: 'Yesterday, 17:20' },
+  { caseId: 'IMP-2027-00427', bl: 'ONEU60442190', line: 'Ocean Network Express', vessel: 'ONE Harmony · 088E', origin: 'Singapore', manifest: 'ONE-088E-JEA-031', containers: ['TGHU5521890', 'TGHU5521891', 'TGHU5521892', 'TGHU5521893'], size: "40' HC", status: 'Discharged this morning', drafted: 'Today, 08:05' },
+];
+
+/* Bills of lading whose permit requests and declaration the agents have drafted */
+export type ClearanceDraft = CaseMeta & { containers: string[]; size: string; goods: string; drafted: string; permits: Permit[]; hs: HsLine[] };
+export const CLEARANCE_DRAFTS: ClearanceDraft[] = [
+  {
+    caseId: 'IMP-2027-00418', bl: 'MEDU48210937', line: 'Mediterranean Shipping', vessel: 'MV Sample Voyager · 027E', origin: 'Shanghai', manifest: 'MSC-027E-JEA-118',
+    containers: ['MSKU0000001', 'MSKU0000002', 'MSKU0000003'], size: "40' HC", goods: 'Food preparations, CCTV cameras, power supplies', drafted: 'Today, 11:50',
+    permits: [
+      { agent: 'DM agent', entity: 'Dubai Municipality', type: 'Food import permit', hs: '2106.90', item: 'Food preparations (instant noodles)', qty: '1,200 cartons', fee: '210.00', ref: 'DM-PRM-27-55120' },
+      { agent: 'SIRA agent', entity: 'SIRA', type: 'Security equipment import permit', hs: '8525.89', item: 'IP CCTV cameras', qty: '180 units', fee: '520.00', ref: 'SIRA-27-08841' },
+    ],
+    hs: [{ hs: '2106.90', d: 'Food preparations', permit: 'Dubai Municipality' }, { hs: '8525.89', d: 'IP CCTV cameras', permit: 'SIRA' }, { hs: '8504.40', d: 'Power supply units', permit: 'None needed' }],
+  },
+  {
+    caseId: 'IMP-2027-00421', bl: 'MSCU70033124', line: 'MSC', vessel: 'MSC Aurora · 112W', origin: 'Nhava Sheva', manifest: 'MSC-112W-JEA-064',
+    containers: ['MSCU7003312', 'MSCU7003313'], size: "20' GP", goods: 'Mixed spices, dried chillies', drafted: 'Today, 09:12',
+    permits: [
+      { agent: 'DM agent', entity: 'Dubai Municipality', type: 'Food import permit', hs: '0910.99', item: 'Mixed spices and dried chillies', qty: '640 bags', fee: '210.00', ref: 'DM-PRM-27-55188' },
+    ],
+    hs: [{ hs: '0910.99', d: 'Mixed spices', permit: 'Dubai Municipality' }, { hs: '0904.21', d: 'Dried chillies', permit: 'Dubai Municipality' }],
+  },
+  {
+    caseId: 'IMP-2027-00426', bl: 'CMAU55210334', line: 'CMA CGM', vessel: 'CMA CGM Tigris · 0FE3', origin: 'Busan', manifest: 'CMA-0FE3-JEA-119',
+    containers: ['CMAU5521033'], size: "40' HC", goods: 'Skin care products, smart door locks', drafted: 'Yesterday, 15:40',
+    permits: [
+      { agent: 'DM agent', entity: 'Dubai Municipality', type: 'Cosmetics product registration', hs: '3304.99', item: 'Skin care products', qty: '2,400 units', fee: '350.00', ref: 'DM-COS-27-10442' },
+      { agent: 'SIRA agent', entity: 'SIRA', type: 'Security equipment import permit', hs: '8301.40', item: 'Smart door locks', qty: '300 units', fee: '520.00', ref: 'SIRA-27-08907' },
+    ],
+    hs: [{ hs: '3304.99', d: 'Skin care products', permit: 'Dubai Municipality' }, { hs: '8301.40', d: 'Smart door locks', permit: 'SIRA' }],
+  },
+];
+export const sumFees = (p: Permit[]) => p.reduce((a, x) => a + Number(x.fee.replace(/,/g, '')), 0).toLocaleString('en-US', { minimumFractionDigits: 2 });

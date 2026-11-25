@@ -98,9 +98,9 @@ export function Dot({ tone, size = 8 }: { tone: CaseStatus; size?: number }) {
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */
 export function Btn({ children, onClick, variant = 'primary', size = 'md', icon, disabled, className = '' }: {
-  children: React.ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary' | 'ghost' | 'dark'; size?: 'sm' | 'md'; icon?: string; disabled?: boolean; className?: string;
+  children: React.ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary' | 'ghost' | 'dark'; size?: 'sm' | 'md' | 'lg'; icon?: string; disabled?: boolean; className?: string;
 }) {
-  const h = size === 'sm' ? 'h-[34px] px-[14px] text-[14px]' : 'h-[42px] px-[20px] text-[15px]';
+  const h = size === 'sm' ? 'h-[34px] px-[14px] text-[14px]' : size === 'lg' ? 'h-[48px] px-[24px] text-[16px]' : 'h-[42px] px-[20px] text-[15px]';
   const v = {
     primary: 'bg-[#1360d2] text-white hover:bg-[#0f4fab] border border-[#1360d2]',
     secondary: 'bg-white text-[#1360d2] border border-[#1360d2] hover:bg-[#f0f5fc]',
@@ -108,7 +108,7 @@ export function Btn({ children, onClick, variant = 'primary', size = 'md', icon,
     dark: 'bg-[#0e1b3d] text-white border border-[#0e1b3d] hover:bg-[#1b2a55]',
   }[variant];
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className={`inline-flex items-center justify-center gap-[8px] rounded-[6px] whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${h} ${v} ${className}`} style={{ fontWeight: 500 }}>
+    <button type="button" onClick={onClick} disabled={disabled} className={`inline-flex items-center justify-center gap-[8px] ${size === 'lg' ? 'rounded-[4px]' : 'rounded-[6px]'} whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${h} ${v} ${className}`} style={{ fontWeight: 500 }}>
       {icon && <Icon name={icon} size={16} />}
       {children}
     </button>

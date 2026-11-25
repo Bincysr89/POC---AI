@@ -7,9 +7,10 @@
  *                           confirms slot; haulier accepts; delivery scheduled
  * Agents advance on their own and stop only where the user must review, pay or
  * confirm. When all four tracks finish, the audit log closes the journey. */
+import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DhAmount } from '../Dh';
-import { COMPANY, WALLET_BALANCE } from './data';
+import { ACTIVE, COMPANY, WALLET_BALANCE, type Permit } from './data';
 import type { Ask } from './flows';
 import { Btn, C, Field, Icon, Pill, SuccessBanner } from './ui';
 import { CaseDocuments, caseDocs } from './docs';
@@ -46,6 +47,8 @@ const PERMITS = [
   { agent: 'SIRA agent', entity: 'SIRA', type: 'Security equipment import permit', hs: '8525.89', item: 'IP CCTV cameras', qty: '180 units', fee: '520.00', ref: 'SIRA-27-08841' },
 ];
 const PERMIT_PAY = '730.00';
+const permitsOf = (): Permit[] => ACTIVE.c.permits ?? PERMITS;
+const vesselShort = () => ACTIVE.c.vessel.replace(' · ', ' ');
 const HS_LINES = [
   { hs: '2106.90', d: 'Food preparations', permit: 'Dubai Municipality' },
   { hs: '8525.89', d: 'IP CCTV cameras', permit: 'SIRA' },
@@ -69,7 +72,7 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
   const { CONTAINERS, n } = K;
   const TRACKS: Record<TrackKey, { name: string; short: string; icon: string; steps: Step[] }> = {
   V: { name: 'Vessel arrival', short: 'Vessel arrival notice', icon: 'ship', steps: [
-    { id: 'v1', t: 'ETA confirmed with the line', who: 'Status agent', kind: 'agent', log: [v('24 Nov 09:33', 'Status agent', 'agent', 'ETA 30 Nov 06:00 confirmed for MV Sample Voyager 027E', 'portcall.eta', 'Done')] },
+    { id: 'v1', t: 'ETA confirmed with the line', who: 'Status agent', kind: 'agent', log: [v('24 Nov 09:33', 'Status agent', 'agent', `ETA 30 Nov 06:00 confirmed for ${vesselShort()}`, 'portcall.eta', 'Done')] },
     { id: 'v2', t: 'Vessel arrived (ATA)', who: 'Port · DP World', kind: 'external', log: [v('30 Nov 05:40', 'DP World', 'external', 'Vessel arrived at Jebel Ali T3, 20 min ahead of ETA', 'portcall.status', 'Arrived')] },
     ...CONTAINERS.map((k, i) => ({ id: `v3-${i}`, t: 'Containers discharged', who: 'Status agent', kind: 'agent' as Kind, show: i === 0,
       log: [v(k.at, 'Status agent', 'agent', `${k.no} discharged, no holds`, 'container.status', 'Discharged')] })),
@@ -77,23 +80,20 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
   D: { name: 'Trade+', short: 'Delivery order', icon: 'do', steps: [
     { id: 'd1', t: 'Draft DO request created', who: 'DO agent', kind: 'agent', log: [d('24 Nov 09:35', 'DO agent', 'agent', `Drafted DO request for ${n} containers with line charges`, 'do.draft', 'Draft ready')] },
     { id: 'd2', t: 'Review, set validity date and pay', who: 'You', kind: 'you', gate: 'do' },
-    { id: 'd3', t: 'Sent to the shipping agent', who: 'DO agent', kind: 'agent', log: [d('24 Nov 10:03', 'DO agent', 'agent', 'Submitted the paid request to Mediterranean Shipping via Trade+', 'do.submit', 'Submitted')] },
+    { id: 'd3', t: 'Sent to the shipping agent', who: 'DO agent', kind: 'agent', log: [d('24 Nov 10:03', 'DO agent', 'agent', `Submitted the paid request to ${ACTIVE.c.line} via Trade+`, 'do.submit', 'Submitted')] },
     { id: 'd4', t: 'Delivery order released', who: 'Shipping agent', kind: 'external',
       requires: i => (i.V < TRACKS.V.steps.length ? 'Released once all containers are discharged' : null),
-      log: [d('30 Nov 12:05', 'Mediterranean Shipping', 'external', `Released DO-27-41902 for ${n} containers`, 'do.status', 'Released')] },
+      log: [d('30 Nov 12:05', ACTIVE.c.line, 'external', `Released DO-27-41902 for ${n} containers`, 'do.status', 'Released')] },
   ] },
   C: { name: 'Integrated Clearance', short: 'Permits & declaration', icon: 'decl', steps: [
     { id: 'c1', t: 'HS codes checked for permits', who: 'Declaration agent', kind: 'agent', log: [c('24 Nov 09:36', 'Declaration agent', 'agent', '3 lines classified: 2106.90 needs DM, 8525.89 needs SIRA', 'hs.classify', 'Done')] },
-    { id: 'c2', t: 'Permit requests drafted', who: 'DM agent · SIRA agent', kind: 'agent', log: [
-      c('24 Nov 09:38', 'DM agent', 'agent', 'Drafted food import permit request with Dubai Municipality', 'dm.permit.draft', 'Draft ready'),
-      c('24 Nov 09:39', 'SIRA agent', 'agent', 'Drafted security equipment permit request with SIRA', 'sira.permit.draft', 'Draft ready'),
+    { id: 'c2', t: 'Permit requests drafted', who: permitsOf().map(p => p.agent).join(' · '), kind: 'agent', log: [
+      ...permitsOf().map((p, i) => c(`24 Nov 09:3${8 + i}`, p.agent, 'agent', `Drafted ${p.type.toLowerCase()} request with ${p.entity}`, `${p.entity === 'SIRA' ? 'sira' : 'dm'}.permit.draft`, 'Draft ready')),
     ] },
     { id: 'c3', t: 'Check and pay permit requests', who: 'You', kind: 'you', gate: 'permits' },
-    { id: 'c4', t: 'Permits approved', who: 'Dubai Municipality · SIRA', kind: 'external', log: [
-      c('25 Nov 11:20', 'Dubai Municipality', 'external', `Approved ${PERMITS[0].ref}`, 'dm.permit.status', 'Approved'),
-      c('26 Nov 15:45', 'SIRA', 'external', `Approved ${PERMITS[1].ref}`, 'sira.permit.status', 'Approved'),
-    ] },
-    { id: 'c5', t: 'Declaration drafted with permits', who: 'Declaration agent', kind: 'agent', log: [c('26 Nov 15:47', 'Declaration agent', 'agent', 'Drafted import declaration with both permits attached', 'declaration.draft', 'Draft ready')] },
+    { id: 'c4', t: 'Permits approved', who: permitsOf().map(p => p.entity).join(' · '), kind: 'external', log:
+      permitsOf().map((p, i) => c(i ? '26 Nov 15:45' : '25 Nov 11:20', p.entity, 'external', `Approved ${p.ref}`, `${p.entity === 'SIRA' ? 'sira' : 'dm'}.permit.status`, 'Approved')) },
+    { id: 'c5', t: 'Declaration drafted with permits', who: 'Declaration agent', kind: 'agent', log: [c('26 Nov 15:47', 'Declaration agent', 'agent', `Drafted import declaration with ${permitsOf().length > 1 ? 'both permits' : 'the permit'} attached`, 'declaration.draft', 'Draft ready')] },
     { id: 'c6', t: 'Submit declaration to Dubai Customs', who: 'You', kind: 'you', gate: 'declare' },
     { id: 'c7', t: 'Cleared by Dubai Customs', who: 'Dubai Customs', kind: 'external',
       requires: i => (i.D < TRACKS.D.steps.length ? 'Customs clears once the DO is released' : null),
@@ -118,8 +118,8 @@ const KEYS: TrackKey[] = ['V', 'D', 'C', 'H'];
 export type CaseSource = 'documents' | 'containers';
 function seedFor(source: CaseSource, n: number): AuditEvent[] {
   if (source === 'containers') return [
-    { time: '24 Nov 09:26', track: 'Documents', actor: 'Status agent', kind: 'agent', action: `Matched ${n} container numbers to BL MEDU48210937`, tool: 'container.lookup', outcome: 'Done' },
-    { time: '24 Nov 09:27', track: 'Documents', actor: 'DO agent', kind: 'agent', action: 'Fetched the bill of lading and cargo manifest from Mediterranean Shipping', tool: 'line.documents', outcome: 'Done' },
+    { time: '24 Nov 09:26', track: 'Documents', actor: 'Status agent', kind: 'agent', action: `Matched ${n} container numbers to BL ${ACTIVE.c.bl}`, tool: 'container.lookup', outcome: 'Done' },
+    { time: '24 Nov 09:27', track: 'Documents', actor: 'DO agent', kind: 'agent', action: `Fetched the bill of lading and cargo manifest from ${ACTIVE.c.line}`, tool: 'line.documents', outcome: 'Done' },
     { time: '24 Nov 09:29', track: 'Documents', actor: 'Cargo owner agent', kind: 'agent', action: 'Matched consignee to your trade licence', tool: 'party.validate', outcome: 'Pass' },
     { time: '24 Nov 09:31', track: 'Documents', actor: 'You', kind: 'you', action: 'Created the import case from container numbers', tool: 'case.create', outcome: 'Approved' },
   ];
@@ -303,13 +303,15 @@ function StepChecklist({ items, cols }: { items: FlowItem[]; cols?: boolean }) {
 }
 
 /* ── The journey card ───────────────────────────────────────────────── */
-export function CaseJourneyCard({ ask, source = 'documents', files, containers, uploaded }: { ask: Ask; source?: CaseSource; files?: string[]; containers?: string[]; uploaded?: Record<string, string> }) {
+export function CaseJourneyCard({ ask, source = 'documents', files, containers, uploaded, barSlot }: { ask: Ask; source?: CaseSource; files?: string[]; containers?: string[]; uploaded?: Record<string, string>; barSlot?: HTMLElement | null }) {
   const K = useMemo(() => caseData(source === 'containers' ? containers ?? [] : DEFAULT_CASE_CONTAINERS), []); // eslint-disable-line react-hooks/exhaustive-deps
   const TRACKS = useMemo(() => buildTracks(K), [K]);
+  const PERMS = permitsOf(), HSL = ACTIVE.c.hs ?? HS_LINES, PPAY = ACTIVE.c.permitPay ?? PERMIT_PAY;
   const { CONTAINERS, DO_LINES, DO_PAY, PLATES, HC, n: NC } = K;
   const [idx, setIdx] = useState<Record<TrackKey, number>>({ V: 0, D: 0, C: 0, H: 0 });
   const [log, setLog] = useState<AuditEvent[]>(() => seedFor(source, K.n));
-  const [sel, setSel] = useState<TrackKey>('V');
+  type View = TrackKey | 'OVERVIEW' | 'DOCS';
+  const [sel, setSel] = useState<View>('OVERVIEW');   // which journey page is open
   const [validity, setValidity] = useState('2027-12-05');
   const [method, setMethod] = useState(0);
   const [openPermit, setOpenPermit] = useState<number | null>(null);
@@ -318,9 +320,8 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   const [extra, setExtra] = useState<Record<string, string>>(uploaded ?? {});
   const userPicked = useRef(false);            // once the user picks a section, never switch it for them
   const [stuck, setStuck] = useState(false);   // stepper pinned under the page header
-  const [activeNav, setActiveNav] = useState<string>('');
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const navLock = useRef(0);
+  const cardRef = useRef<HTMLDivElement>(null);
   const prevDone = useRef<Record<TrackKey, boolean>>({ V: false, D: false, C: false, H: false });
   const [flash, setFlash] = useState<TrackKey | null>(null);
   const gateRef = useRef<HTMLDivElement>(null);
@@ -332,26 +333,13 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   const allDone = KEYS.every(doneTrack);
   const open = KEYS.filter(k => gateOf(k));
 
-  // Pin the stepper under the page header once it scrolls up; highlight the section in view
+  // Pin the stepper under the page header once it scrolls up
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
     const io = new IntersectionObserver(([e]) => setStuck(!e.isIntersecting && e.boundingClientRect.top < 100), { rootMargin: '-88px 0px 0px 0px', threshold: 0 });
     io.observe(el);
-    const spy = () => {
-      if (Date.now() < navLock.current) return;            // a step was just clicked
-      const ids = ['case-docs', 'trk-V', 'trk-D', 'trk-C', 'trk-H'];
-      const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4;
-      let cur = '';
-      ids.forEach(id => {
-        const r = document.getElementById(id)?.getBoundingClientRect();
-        if (r && (r.top <= 190 || (atBottom && r.top < window.innerHeight * 0.6))) cur = id;
-      });
-      setActiveNav(cur);
-    };
-    window.addEventListener('scroll', spy, { passive: true });
-    spy();
-    return () => { io.disconnect(); window.removeEventListener('scroll', spy); };
+    return () => io.disconnect();
   }, []);
 
   // Clock: on each tick every track that is not waiting for the user moves one step
@@ -379,7 +367,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
     const nowDone = Object.fromEntries(KEYS.map(k => [k, idx[k] >= TRACKS[k].steps.length])) as Record<TrackKey, boolean>;
     const justDone = KEYS.filter(k => nowDone[k] && !prevDone.current[k]);
     prevDone.current = nowDone;
-    if (!justDone.includes(sel)) return;
+    if (sel === 'OVERVIEW' || sel === 'DOCS' || !justDone.includes(sel)) return;
     const remaining = KEYS.filter(k => !nowDone[k]);
     if (!remaining.length) return;                       // all done: the completion message takes over
     const i = KEYS.indexOf(sel);
@@ -388,30 +376,20 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
     const t = setTimeout(() => {
       setSel(next);
       setFlash(next);
-      setActiveNav(`trk-${next}`);
-      navLock.current = Date.now() + 1200;
-      setTimeout(() => document.getElementById(`trk-${next}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
-      setTimeout(() => setFlash(f => (f === next ? null : f)), 2200);
+      toTop();
+      setTimeout(() => setFlash(f => (f === next ? null : f)), 4000);
     }, 900);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx]);
 
-  // When a track stops for the user, show it (unless the user is already on another open checkpoint)
-  const openKey = open.join('');
-  useEffect(() => {
-    if (!open.length || userPicked.current) return;
-    if (!gateOf(sel)) setSel(open[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openKey]);
-
   useEffect(() => {
     if (allDone && !announced.current) { announced.current = true; setTimeout(() => ask('audit-log', undefined, { events: log, containers: NC, summary: completion }), 900); }
   }, [allDone, log, ask]);
 
-  const pass = (k: TrackKey, events: AuditEvent[]) => { userPicked.current = true; setSel(k); setLog(l => [...l, ...events]); setIdx(i => ({ ...i, [k]: i[k] + 1 })); };
+  const pass = (k: TrackKey, events: AuditEvent[]) => { userPicked.current = true; setLog(l => [...l, ...events]); setIdx(i => ({ ...i, [k]: i[k] + 1 })); };
   const payDo = () => pass('D', [d('24 Nov 10:02', 'You', 'you', `Reviewed the DO request, set validity to ${validity} and paid (${['wallet', 'credit facility'][method]})`, 'tradepay.pay', `Paid Dh ${DO_PAY}`)]);
-  const payPermits = () => pass('C', [c('24 Nov 10:10', 'You', 'you', 'Checked both permit requests and paid to submit them', 'tradepay.pay', `Paid Dh ${PERMIT_PAY}`)]);
+  const payPermits = () => pass('C', [c('24 Nov 10:10', 'You', 'you', `Checked ${PERMS.length > 1 ? 'both permit requests' : 'the permit request'} and paid to submit ${PERMS.length > 1 ? 'them' : 'it'}`, 'tradepay.pay', `Paid Dh ${PPAY}`)]);
   const declare = () => pass('C', [c('26 Nov 16:05', 'You', 'you', 'Submitted the declaration to Dubai Customs; duty from your duty account', 'declaration.submit', `Paid Dh ${DECL_PAY}`)]);
   const confirmSlot = () => pass('H', [h('24 Nov 10:15', 'You', 'you', `Confirmed delivery slot ${slotText(slot)} for ${NC} containers`, 'cargowaves.order.confirm', 'Confirmed')]);
 
@@ -464,24 +442,24 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   /* To-do list: every open checkpoint, in plain words */
   const TODO: Record<NonNullable<Step['gate']>, { title: string; sub: string; amount: string | null; cta: string }> = {
     do: { title: 'Pay for the delivery order', sub: 'Trade+ · review it and set the validity date', amount: DO_PAY, cta: 'Review and pay' },
-    permits: { title: 'Pay for 2 permit requests', sub: 'Integrated Clearance · Dubai Municipality and SIRA', amount: PERMIT_PAY, cta: 'Review and pay' },
+    permits: { title: `Pay for ${PERMS.length} permit request${PERMS.length > 1 ? 's' : ''}`, sub: `Integrated Clearance · ${PERMS.map(p => p.entity).join(' and ')}`, amount: PPAY, cta: 'Review and pay' },
     declare: { title: 'Submit your declaration to Dubai Customs', sub: 'Integrated Clearance · duty from your duty account', amount: DECL_PAY, cta: 'Review and submit' },
     slots: { title: 'Choose a delivery slot', sub: `CargoWaves · ${HAULIER.name}`, amount: null, cta: 'Choose slot' },
   };
   const todos = open.map(k => ({ k, item: TODO[gateOf(k)!] }));
-  const goTo = (k: TrackKey | 'DOCS') => {
-    userPicked.current = true;
-    if (k !== 'DOCS') setSel(k);
-    setActiveNav(k === 'DOCS' ? 'case-docs' : `trk-${k}`);
-    navLock.current = Date.now() + 900;
-    setTimeout(() => document.getElementById(k === 'DOCS' ? 'case-docs' : `trk-${k}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  /* Each section is its own page: switch page, then bring the top of the journey into view */
+  const toTop = () => {
+    const el = cardRef.current; if (!el) return;
+    const y = el.getBoundingClientRect().top + window.scrollY - 96;
+    if (window.scrollY > y) window.scrollTo({ top: y, behavior: 'auto' });
   };
-  const pick = (k: TrackKey) => { userPicked.current = true; setSel(k); };
+  const goTo = (k: View) => { userPicked.current = true; setSel(k); toTop(); };
+  const pick = (k: TrackKey) => goTo(k);
   const docsList = caseDocs(source, files, extra);
   const missingDocs = docsList.filter(d => d.status === 'missing').length;
   const completion: CompletionSummary = {
     containers: CONTAINERS.map(c => c.no), plates: PLATES, slot: slotText(slot),
-    doPaid: DO_PAY, permitPaid: PERMIT_PAY, dutyPaid: DECL_PAY, docs: docsList,
+    doPaid: DO_PAY, permitPaid: PPAY, dutyPaid: DECL_PAY, docs: docsList,
   };
   const NAV: { key: TrackKey | 'DOCS'; label: string; state: 'done' | 'you' | 'run' | 'blocked'; pct: number; icon: string; status: string }[] = [
     { key: 'DOCS', label: 'Documents', state: missingDocs ? 'you' : 'done', pct: Math.round(((docsList.length - missingDocs) / docsList.length) * 100), icon: 'doc', status: missingDocs ? `${missingDocs} to add` : 'Done' },
@@ -519,8 +497,8 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
     if (k === 'V') return (
       <div className="grid grid-cols-1 gap-3">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 rounded-[12px] p-3" style={{ background: '#f7f9fd' }}>
-          <Field label="Vessel / voyage" value="MV Sample Voyager · 027E" />
-          <Field label="Bill of lading" value="MEDU48210937" />
+          <Field label="Vessel / voyage" value={ACTIVE.c.vessel} />
+          <Field label="Bill of lading" value={ACTIVE.c.bl} />
           <Field label="ETA (expected)" value={idx.V >= 1 ? '30 Nov 2027, 06:00' : 'Confirming…'} />
           <Field label="ATA (actual)" value={idx.V >= 2 ? <span className="text-[#17703a]">30 Nov 2027, 05:40</span> : 'Not arrived yet'} />
         </div>
@@ -549,8 +527,8 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
       <Checkpoint
         prepared={<>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-            <Field label="Shipping agent" value="Mediterranean Shipping" />
-            <Field label="Bill of lading" value="MEDU48210937" />
+            <Field label="Shipping agent" value={ACTIVE.c.line} />
+            <Field label="Bill of lading" value={ACTIVE.c.bl} />
             <Field label="Consignee" value={COMPANY} />
             <Field label="Containers" value={HC} />
           </div>
@@ -572,7 +550,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
       <div className="rounded-[12px] p-3 grid gap-3" style={{ background: '#f7f9fd' }}>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
           <Field label="DO request" value={idx.D >= 1 ? 'DOR-27-118340' : 'Drafting…'} />
-          <Field label="Shipping agent" value="Mediterranean Shipping" />
+          <Field label="Shipping agent" value={ACTIVE.c.line} />
           <Field label="Valid until" value={idx.D >= 2 ? validity : '—'} />
           <Field label="Paid" value={idx.D >= 2 ? <DhAmount value={DO_PAY} /> : '—'} />
         </div>
@@ -585,9 +563,9 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
         {idx.C === 2 ? (
           <Checkpoint
             prepared={<>
-              <p className="text-[14px] text-[#40484f] mb-2">Your HS codes need 2 permits. The DM agent and SIRA agent drafted them for you.</p>
+              <p className="text-[14px] text-[#40484f] mb-2">Your HS codes need {PERMS.length} permit{PERMS.length > 1 ? 's' : ''}. The {PERMS.map(p => p.agent).join(' and ')} drafted {PERMS.length > 1 ? 'them' : 'it'} for you.</p>
               <div className="grid grid-cols-1 gap-2">
-                {PERMITS.map((p, i) => (
+                {PERMS.map((p, i) => (
                   <div key={p.ref} className="ai-glass-row rounded-[12px]">
                     <button type="button" onClick={() => setOpenPermit(o => (o === i ? null : i))} className="w-full flex items-center gap-3 px-3 py-[10px] text-left" aria-expanded={openPermit === i}>
                       <span className="w-[48px] h-[40px] rounded-[8px] flex items-center justify-center text-[14px] flex-shrink-0" style={{ background: '#eef4ff', color: C.blue, fontWeight: 800 }}>{p.entity === 'SIRA' ? 'SIRA' : 'DM'}</span>
@@ -602,8 +580,8 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
             </>}
             action={<div className="grid grid-cols-1 gap-2">
               <p className="text-[14px] text-[#40484f]">Check the two drafts (tap to open), then pay to submit them to the authorities.</p>
-              {sum(PERMITS.map(p => [p.entity, p.fee] as [string, string]), PERMIT_PAY)}
-              <Btn onClick={payPermits} className="mt-1">Pay and submit&nbsp;<DhAmount value={PERMIT_PAY} /></Btn>
+              {sum(PERMS.map(p => [p.entity, p.fee] as [string, string]), PPAY)}
+              <Btn onClick={payPermits} className="mt-1">Pay and submit&nbsp;<DhAmount value={PPAY} /></Btn>
             </div>}
           />
         ) : idx.C === 5 ? (
@@ -629,7 +607,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
             <p className="px-3 pt-2 pb-1 text-[14px] text-[#4f5a78]" style={{ fontWeight: 600 }}>Goods and the permits they need</p>
             <table className="w-full">
               <tbody>
-                {HS_LINES.map(l => (
+                {HSL.map(l => (
                   <tr key={l.hs} className="border-t text-[14px] text-[#111838]" style={{ borderColor: '#eef1f6' }}>
                     <td className="px-3 py-[8px]" style={{ fontWeight: 600 }}>{l.hs}</td><td className="px-3 py-[8px]">{l.d}</td>
                     <td className="px-3 py-[8px] text-right">{l.permit === 'None needed' ? <span className="text-[#4f5a78]">No permit</span> : <span className="inline-flex items-center gap-1 text-[#1360d2]" style={{ fontWeight: 600 }}>{l.permit === 'Dubai Municipality' ? 'DM' : l.permit}</span>}</td>
@@ -639,7 +617,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
             </table>
           </div>
           <div className="grid grid-cols-1 gap-2 content-start">
-            {PERMITS.map(p => {
+            {PERMS.map(p => {
               const st = idx.C >= 4 ? 'Approved' : idx.C >= 3 ? 'With the authority' : idx.C >= 2 ? 'Drafted · needs payment' : 'Being drafted';
               return (
                 <div key={p.ref} className="rounded-[10px] px-3 py-[10px] flex items-center gap-3" style={{ background: '#f7f9fd' }}>
@@ -709,19 +687,59 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
     );
   };
 
+  const pillFor = (k: TrackKey) => { const st = trackInfo(k).state; return <Pill tone={st === 'done' ? 'done' : st === 'you' ? 'you' : st === 'blocked' ? 'wait' : 'run'}>{st === 'done' ? 'Done' : st === 'you' ? 'Needs you' : st === 'blocked' ? 'Waiting' : 'In progress'}</Pill>; };
+
+  /* Progress summary of a track: slim bar, step count and what is happening now */
+  const progress = (k: TrackKey, cta?: boolean) => {
+    const ti = trackInfo(k);
+    const items = flowItems(k);
+    const doneN = items.filter(i => i.st === 'done').length;
+    const cur = items.find(i => i.st !== 'done');
+    const g = gateOf(k);
+    const tone = ti.state === 'done' ? '#17703a' : ti.state === 'you' ? '#8a5a00' : ti.state === 'blocked' ? C.muted : C.blue;
+    return (
+      <div>
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0"><StepBar items={items} /></div>
+          <span className="text-[14px] text-[#4f5a78] whitespace-nowrap">{ti.state === 'done' ? `All ${items.length} steps done` : `Step ${doneN + 1} of ${items.length}`}</span>
+        </div>
+        <div className="mt-3 flex items-center gap-3 flex-wrap">
+          <span className="text-[14px] flex items-center gap-2 flex-1 min-w-[220px]" style={{ color: tone }}>
+            <Icon name={ti.state === 'done' ? 'check' : ti.state === 'you' ? 'person' : ti.state === 'blocked' ? 'clock' : 'sparkle'} size={15} strokeWidth={2.2} />
+            <span>
+              {cur && <strong className="text-[#111838]" style={{ fontWeight: 700 }}>{cur.label}</strong>}
+              {cur && <span className="text-[#4f5a78]"> · </span>}
+              {ti.blocked ?? ti.line}
+            </span>
+          </span>
+          {cta && (g ? <Btn size="sm" onClick={() => goTo(k)}>{TODO[g].cta}</Btn> : <Btn size="sm" variant="secondary" onClick={() => goTo(k)}>Open track</Btn>)}
+        </div>
+      </div>
+    );
+  };
+
+  const pageOrder: View[] = ['OVERVIEW', 'DOCS', ...KEYS];
+  const pageName = (v: View) => (v === 'OVERVIEW' ? 'Overview' : v === 'DOCS' ? 'Documents' : META[v].title);
+  const pi = pageOrder.indexOf(sel);
+  const prevPage = pi > 0 ? pageOrder[pi - 1] : null;
+  const nextPage = pi < pageOrder.length - 1 ? pageOrder[pi + 1] : null;
+
   return (
-    <div className="rounded-[16px] border overflow-clip" style={{ background: '#fff', borderColor: '#dde4f0', boxShadow: '0 8px 28px -16px rgba(14,27,61,.25)' }}>
+    <div ref={cardRef} className="rounded-[16px] border overflow-clip" style={{ background: '#fff', borderColor: '#dde4f0', boxShadow: '0 8px 28px -16px rgba(14,27,61,.25)' }}>
       {/* ① Header: what this is and how far along */}
       <div className="px-5 sm:px-6 pt-5 pb-4" style={{ background: 'linear-gradient(180deg,#f6f9ff,#fff)' }}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="min-w-0">
-            <p className="text-[14px] text-[#1360d2]" style={{ fontWeight: 700 }}>Import journey · IMP-2027-00422</p>
-            <p className="text-[19px] text-[#111838] leading-snug mt-[2px]" style={{ fontWeight: 600 }}>{allDone ? 'Your import is complete' : 'Your import is on its way'}</p>
-            <p className="text-[14px] text-[#4f5a78] mt-[2px]">BL MEDU48210937 · MV Sample Voyager 027E · Shanghai → Jebel Ali · {NC} containers</p>
+            <p className="text-[14px] text-[#1360d2]" style={{ fontWeight: 700 }}>Import journey · {ACTIVE.c.caseId}</p>
+            <p className="text-[19px] text-[#111838] leading-snug mt-[2px]" style={{ fontWeight: 600 }}>{allDone ? 'Your import journey is on track' : 'Your import is on its way'}</p>
+            <p className="text-[14px] text-[#4f5a78] mt-[2px]">BL {ACTIVE.c.bl} · {vesselShort()} · {ACTIVE.c.origin} → Jebel Ali · {NC} containers</p>
           </div>
-          <div className="text-right">
-            <p className="text-[24px] text-[#0e1b3d] leading-none" style={{ fontWeight: 700 }}>{doneTracks}<span className="text-[15px] text-[#4f5a78]"> of 4</span></p>
-            <p className="text-[14px] text-[#4f5a78] mt-1">tracks done</p>
+          <div className="flex items-center gap-4">
+            {sel !== 'OVERVIEW' && <Btn size="sm" variant="secondary" icon="grid" onClick={() => goTo('OVERVIEW')}>Journey overview</Btn>}
+            <div className="text-right">
+              <p className="text-[24px] text-[#0e1b3d] leading-none" style={{ fontWeight: 700 }}>{doneTracks}<span className="text-[15px] text-[#4f5a78]"> of 4</span></p>
+              <p className="text-[14px] text-[#4f5a78] mt-1">tracks done</p>
+            </div>
           </div>
         </div>
       </div>
@@ -736,7 +754,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
             const deg = Math.max(8, it.pct) * 3.6;
             const prevDone = n > 0 && NAV[n - 1].state === 'done';
             const size = stuck ? 32 : 44;
-            const active = activeNav === (it.key === 'DOCS' ? 'case-docs' : `trk-${it.key}`);
+            const active = sel === it.key;
             return (
               <li key={it.key} className="flex-1 flex flex-col items-center relative min-w-0">
                 {n > 0 && (
@@ -763,13 +781,17 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
         </ol>
       </nav>
 
+      <div key={sel} className="ai-page-in border-t" style={{ borderColor: '#dde4f0' }}>
+        {/* ── Overview page ── */}
+        {sel === 'OVERVIEW' && (
+          <>
       {/* ② Needs your action */}
-      <section className="px-5 sm:px-6 py-4 border-t" style={{ borderColor: '#dde4f0' }}>
+      <section className="px-5 sm:px-6 py-4 ">
         <p className={`${sectionTitle} mb-3`} style={sectionStyle}>Needs your action {todos.length > 0 && <span className="ml-1 inline-flex items-center justify-center min-w-[24px] h-[24px] px-[6px] rounded-full text-[14px] text-white align-middle" style={{ background: '#f2b200' }}>{todos.length}</span>}</p>
         {todos.length === 0 ? (
           <p className="text-[14px] text-[#40484f] flex items-center gap-2 rounded-[12px] px-4 py-3 border" style={{ background: allDone ? '#e3f5ea' : '#f7f9fd', borderColor: allDone ? '#cdebd8' : '#e6ebf3' }}>
             <Icon name={allDone ? 'check' : 'sparkle'} size={16} className={allDone ? 'text-[#17703a]' : 'text-[#1360d2]'} />
-            {allDone ? <>Nothing left to do. Every track is complete. <button type="button" className="text-[#1360d2] underline underline-offset-2" style={{ fontWeight: 600 }} onClick={() => document.getElementById('import-complete')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>See your documents</button></> : 'Nothing right now. The agents are working and will ask when they need you.'}
+            {allDone ? 'Nothing left to do. Every track is complete.' : 'Nothing right now. The agents are working and will ask when they need you.'}
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-2">
@@ -788,93 +810,42 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
         )}
       </section>
 
-      {/* Documents on this case — uploaded or fetched, always viewable */}
-      <section id="case-docs" className="px-5 sm:px-6 py-4 border-t scroll-mt-[176px]" style={{ borderColor: '#dde4f0' }}>
-        <CaseDocuments source={source} files={files} containers={NC} extra={extra}
-          onUpload={t => setExtra(x => ({ ...x, [t]: t === 'Commercial invoice' ? 'Invoice_INV-0931.pdf' : 'Packing_list.pdf' }))} />
-      </section>
 
-      {/* ③ The four tracks */}
-      <section className="px-5 sm:px-6 py-5 border-t" style={{ borderColor: '#dde4f0', background: '#eef2f9' }}>
-        <div className="flex items-end justify-between gap-3 mb-3 flex-wrap">
-          <p className={sectionTitle} style={sectionStyle}>Your four tracks · running at the same time</p>
-          <span className="flex items-center gap-3 text-[14px] text-[#4f5a78]">
-            <span className="inline-flex items-center gap-1"><Icon name="sparkle" size={12} className="text-[#1360d2]" />AI agent</span>
-            <span className="inline-flex items-center gap-1"><Icon name="person" size={12} className="text-[#b07a00]" />You</span>
-            <span className="inline-flex items-center gap-1"><span className="size-[10px] rounded-full" style={{ background: '#28a745' }} />Done</span>
-          </span>
-        </div>
-        <div className="grid grid-cols-1 gap-3">
-          {KEYS.map((k, n) => {
-            const ti = trackInfo(k);
-            const on = sel === k;
-            return (
-              <div key={k} id={`trk-${k}`} className={`min-w-0 rounded-[14px] border transition-colors scroll-mt-[176px] ${flash === k ? 'ai-next' : ''}`} style={{ borderColor: on ? '#9fc2f2' : ti.state === 'you' ? '#efd894' : ti.state === 'done' ? '#c8e6d2' : '#dde5f1', background: '#fff', boxShadow: on ? '0 10px 26px -18px rgba(19,96,210,.45)' : '0 1px 2px rgba(14,27,61,.04)' }}>
-                <button type="button" onClick={() => pick(k)} aria-expanded={on} className="w-full text-left px-4 pt-4 pb-3 flex items-start gap-3">
-                  <span className="size-[42px] rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#1360d2,#4f8ff7)', boxShadow: '0 6px 14px -8px rgba(19,96,210,.6)' }}>
-                    <Icon name={TRACKS[k].icon} size={19} strokeWidth={1.8} />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[16px] text-[#111838]" style={{ fontWeight: 700 }}>{n + 1}. {META[k].title}</span>
-                      {flash === k && <span className="ai-rise text-[14px] px-[10px] h-[26px] inline-flex items-center gap-1 rounded-full text-white" style={{ background: 'linear-gradient(135deg,#1360d2,#4f8ff7)', fontWeight: 600 }}><Icon name="arrow" size={13} />Up next</span>}
-                    </span>
-                    <span className="sm:hidden inline-flex mt-[6px]"><Pill tone={ti.state === 'done' ? 'done' : ti.state === 'you' ? 'you' : ti.state === 'blocked' ? 'wait' : 'run'}>{ti.state === 'done' ? 'Done' : ti.state === 'you' ? 'Needs you' : ti.state === 'blocked' ? 'Waiting' : 'In progress'}</Pill></span>
-                    <span className="block text-[14px] text-[#4f5a78] mt-[2px] leading-snug">{META[k].what}</span>
-                  </span>
-                  <span className="flex flex-col items-end gap-1 flex-shrink-0">
-                    <span className="hidden sm:inline-flex"><Pill tone={ti.state === 'done' ? 'done' : ti.state === 'you' ? 'you' : ti.state === 'blocked' ? 'wait' : 'run'}>{ti.state === 'done' ? 'Done' : ti.state === 'you' ? 'Needs you' : ti.state === 'blocked' ? 'Waiting' : 'In progress'}</Pill></span>
-                    <Icon name="chevDown" size={16} className={`text-[#66708c] transition-transform ${on ? 'rotate-180' : ''}`} />
-                  </span>
+            {/* The four tracks: each opens as its own page */}
+            <section className="px-5 sm:px-6 py-5 border-t" style={{ borderColor: '#dde4f0', background: '#eef2f9' }}>
+              <div className="flex items-end justify-between gap-3 mb-3 flex-wrap">
+                <p className={sectionTitle} style={sectionStyle}>Your four tracks · running at the same time</p>
+                <button type="button" onClick={() => goTo('DOCS')} className="text-[14px] text-[#1360d2] hover:underline underline-offset-2 inline-flex items-center gap-1" style={{ fontWeight: 600 }}>
+                  <Icon name="doc" size={15} />Documents on this case · {docsList.length - missingDocs} of {docsList.length}
                 </button>
-                {(() => {
-                  const items = flowItems(k);
-                  const doneN = items.filter(i => i.st === 'done').length;
-                  const cur = items.find(i => i.st !== 'done');
-                  const g = gateOf(k);
-                  const tone = ti.state === 'done' ? '#17703a' : ti.state === 'you' ? '#8a5a00' : ti.state === 'blocked' ? C.muted : C.blue;
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                {KEYS.map((k, n) => {
+                  const ti = trackInfo(k);
                   return (
-                    <div className="px-4 pb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 min-w-0"><StepBar items={items} /></div>
-                        <span className="text-[14px] text-[#4f5a78] whitespace-nowrap">{ti.state === 'done' ? `All ${items.length} steps done` : `Step ${doneN + 1} of ${items.length}`}</span>
-                      </div>
-                      <div className="mt-3 flex items-center gap-3 flex-wrap">
-                        <span className="text-[14px] flex items-center gap-2 flex-1 min-w-[220px]" style={{ color: tone }}>
-                          <Icon name={ti.state === 'done' ? 'check' : ti.state === 'you' ? 'person' : ti.state === 'blocked' ? 'clock' : 'sparkle'} size={15} strokeWidth={2.2} />
-                          <span>
-                            {cur && <strong className="text-[#111838]" style={{ fontWeight: 700 }}>{cur.label}</strong>}
-                            {cur && <span className="text-[#4f5a78]"> · </span>}
-                            {ti.blocked ?? ti.line}
-                          </span>
+                    <div key={k} className="min-w-0 rounded-[14px] border p-4 flex flex-col gap-3 transition-shadow hover:shadow-md" style={{ borderColor: ti.state === 'you' ? '#efd894' : ti.state === 'done' ? '#c8e6d2' : '#dde5f1', background: '#fff' }}>
+                      <button type="button" onClick={() => goTo(k)} className="w-full text-left flex items-start gap-3">
+                        <span className="size-[42px] rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#1360d2,#4f8ff7)', boxShadow: '0 6px 14px -8px rgba(19,96,210,.6)' }}>
+                          <Icon name={TRACKS[k].icon} size={19} strokeWidth={1.8} />
                         </span>
-                        {!on && g && <Btn size="sm" onClick={() => pick(k)}>{TODO[g].cta}</Btn>}
-                        {!on && !g && <button type="button" onClick={() => pick(k)} className="text-[14px] text-[#1360d2] hover:underline underline-offset-2" style={{ fontWeight: 600 }}>View details</button>}
-                      </div>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-[16px] text-[#111838]" style={{ fontWeight: 700 }}>{n + 1}. {META[k].title}</span>
+                          <span className="block text-[14px] text-[#4f5a78] mt-[2px] leading-snug">{META[k].what}</span>
+                        </span>
+                        <span className="flex-shrink-0 hidden sm:inline-flex">{pillFor(k)}</span>
+                      </button>
+                      <span className="sm:hidden">{pillFor(k)}</span>
+                      <div className="mt-auto">{progress(k, true)}</div>
                     </div>
                   );
-                })()}
-                {on && (
-                  <div className="px-4 pb-4 pt-4 border-t ai-msg grid grid-cols-1 2xl:grid-cols-[250px_minmax(0,1fr)] gap-4" style={{ borderColor: '#eef1f6' }}>
-                    <div className="min-w-0">
-                      <p className="text-[14px] text-[#4f5a78] mb-1 px-[10px]" style={{ fontWeight: 700 }}>Steps in this track</p>
-                      <div className="2xl:hidden"><StepChecklist items={flowItems(k)} cols /></div>
-                      <div className="hidden 2xl:block"><StepChecklist items={flowItems(k)} /></div>
-                    </div>
-                    <div className="min-w-0">{detail(k)}</div>
-                  </div>
-                )}
+                })}
               </div>
-            );
-          })}
-        </div>
-      </section>
+            </section>
 
       {/* ④ Recent activity */}
       <section className="px-5 sm:px-6 py-4 border-t" style={{ borderColor: '#dde4f0' }}>
         <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
           <p className={sectionTitle} style={sectionStyle}>Recent activity</p>
-          {allDone && <Btn size="sm" variant="secondary" icon="doc" onClick={() => document.getElementById('import-complete')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Documents and audit log</Btn>}
         </div>
         <ul className="grid grid-cols-1 gap-[6px]">
           {latest.map((e, i) => (
@@ -885,6 +856,75 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
           ))}
         </ul>
       </section>
+          </>
+        )}
+
+        {/* ── Documents page ── */}
+        {sel === 'DOCS' && (
+          <section className="px-5 sm:px-6 py-5">
+            <CaseDocuments source={source} files={files} containers={NC} extra={extra}
+              onUpload={t => setExtra(x => ({ ...x, [t]: t === 'Commercial invoice' ? 'Invoice_INV-0931.pdf' : 'Packing_list.pdf' }))} />
+          </section>
+        )}
+
+        {/* ── One full-width page per track ── */}
+        {sel !== 'OVERVIEW' && sel !== 'DOCS' && (() => {
+          const k = sel;
+          const n = KEYS.indexOf(k);
+          return (
+            <section className="px-5 sm:px-6 py-6">
+              {flash === k && (
+                <p className="ai-rise mb-4 rounded-[12px] px-4 py-3 text-[14px] text-white inline-flex items-center gap-2" style={{ background: 'linear-gradient(135deg,#1360d2,#4f8ff7)', fontWeight: 600 }}>
+                  <Icon name="arrow" size={15} />Up next · the previous track is done, so we opened {META[k].title} for you
+                </p>
+              )}
+              <div className="flex items-start gap-4">
+                <span className="size-[52px] rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#1360d2,#4f8ff7)', boxShadow: '0 8px 18px -8px rgba(19,96,210,.6)' }}>
+                  <Icon name={TRACKS[k].icon} size={24} strokeWidth={1.8} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] text-[#1360d2]" style={{ fontWeight: 700 }}>Track {n + 1} of 4</p>
+                  <h2 className="text-[22px] sm:text-[24px] text-[#0e1b3d] leading-tight" style={{ fontWeight: 700 }}>{META[k].title}</h2>
+                  <p className="text-[15px] text-[#4f5a78] mt-1">{META[k].what}</p>
+                </div>
+                <span className="flex-shrink-0 hidden sm:inline-flex">{pillFor(k)}</span>
+              </div>
+              <div className="mt-5 rounded-[14px] px-4 py-4" style={{ background: '#f6f8fc' }}>{progress(k)}</div>
+
+              <div className="mt-5 grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] gap-5">
+                <aside className="min-w-0 rounded-[14px] border p-3 self-start" style={{ borderColor: '#e3e8f3' }}>
+                  <p className="text-[14px] text-[#4f5a78] mb-1 px-[10px]" style={{ fontWeight: 700 }}>Steps in this track</p>
+                  <div className="xl:hidden"><StepChecklist items={flowItems(k)} cols /></div>
+                  <div className="hidden xl:block"><StepChecklist items={flowItems(k)} /></div>
+                </aside>
+                <div className="min-w-0">{detail(k)}</div>
+              </div>
+            </section>
+          );
+        })()}
+
+        {/* Page footer inside the card (only when no page-level action bar is given) */}
+        {!barSlot && sel !== 'OVERVIEW' && (
+          <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-t flex-wrap" style={{ borderColor: '#dde4f0', background: '#fbfcfe' }}>
+            {prevPage ? <Btn variant="secondary" onClick={() => goTo(prevPage)}>← {pageName(prevPage)}</Btn> : <span />}
+            {nextPage && <Btn onClick={() => goTo(nextPage)}>{pageName(nextPage)} →</Btn>}
+          </div>
+        )}
+      </div>
+      {barSlot && createPortal(
+        <>
+          <div className="flex items-center gap-3">
+            {prevPage && <Btn size="lg" variant="secondary" onClick={() => goTo(prevPage)}>Back</Btn>}
+            <span className="text-[14px] text-[#4f5a78] hidden md:inline">Page {pi + 1} of {pageOrder.length} · {pageName(sel)}</span>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            {allDone && <Btn size="lg" variant={nextPage ? 'secondary' : 'primary'} icon="doc" onClick={() => ask('audit-log', undefined, { events: log, containers: NC, summary: completion })}>Documents and audit log</Btn>}
+            {nextPage && <Btn size="lg" onClick={() => goTo(nextPage)}>Next: {pageName(nextPage)}</Btn>}
+            {!nextPage && !allDone && <Btn size="lg" icon="grid" onClick={() => goTo('OVERVIEW')}>Journey overview</Btn>}
+          </div>
+        </>,
+        barSlot,
+      )}
     </div>
   );
 }
@@ -910,11 +950,11 @@ export function AuditLogCard({ events, containers = 4, summary }: { events: Audi
 
   return (
     <div className="grid grid-cols-1 gap-3">
-      {summary ? <ImportComplete summary={summary} /> : <SuccessBanner><strong>Success:</strong> Import <strong>IMP-2027-00422</strong> is complete. DO released, declaration cleared and delivery of {containers} containers scheduled with {HAULIER.name}.</SuccessBanner>}
+      {summary ? <ImportComplete summary={summary} /> : <SuccessBanner><strong>Success:</strong> Import <strong>{ACTIVE.c.caseId}</strong> is complete. DO released, declaration cleared and delivery of {containers} containers scheduled with {HAULIER.name}.</SuccessBanner>}
       <div className="bg-white rounded-[14px] border overflow-hidden" style={{ borderColor: C.border }}>
         <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <p className="text-[17px] text-[#111838]" style={{ fontWeight: 600 }}>Audit log · IMP-2027-00422</p>
+            <p className="text-[17px] text-[#111838]" style={{ fontWeight: 600 }}>Audit log · {ACTIVE.c.caseId}</p>
             <p className="text-[14px] text-[#4f5a78]">Every step across the four tracks: who did it, the governed tool used, and the outcome</p>
           </div>
           <Btn size="sm" variant="secondary" icon="doc">Download PDF</Btn>

@@ -13,7 +13,7 @@ const VALID = /^[A-Z]{4}\d{7}$/;
 const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
 /* Chip input for container numbers — typing, comma/space/enter and paste */
-function ContainerInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+export function ContainerInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const [text, setText] = useState('');
   const add = (raw: string) => {
     const parts = raw.toUpperCase().split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);

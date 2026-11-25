@@ -4,6 +4,7 @@
  * agents and answers with interactive cards; anything that submits or pays
  * waits for the user's approval. */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DhAmount } from '../Dh';
 import { CASES, DEFAULT_MY_AGENTS, DO_TOTAL, PILLS, USER_NAME, extractContainers, type MyAgent } from './data';
 import { ContainerDOCard } from './containers';
@@ -271,7 +272,12 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
     return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   }, []);
 
+  const navigate = useNavigate();
   const ask: Ask = (intent, utter, payload) => {
+    // Starting an import is a full-page flow, not a chat card
+    if (intent === 'upload') { navigate('/landing/trader/import?source=documents', { state: { files: payload?.files } }); return; }
+    if (intent === 'do-containers') { navigate('/landing/trader/import?source=containers', { state: { containers: payload?.containers } }); return; }
+    if (intent === 'case-journey' && payload?.resume) { navigate('/landing/trader/import?source=documents&start=journey'); return; }
     if (pending) return;
     const r = reply(intent, payload);
     const user: Msg | null = utter ? { id: idRef.current++, who: 'me', text: utter, attachments: payload?.files as string[] | undefined } : null;

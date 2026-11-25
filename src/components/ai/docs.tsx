@@ -3,7 +3,7 @@
  * from the shipping line — with a preview and the fields the agents read. */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { COMPANY, SAMPLE_DOCS } from './data';
+import { ACTIVE, COMPANY, SAMPLE_DOCS } from './data';
 import { Btn, C, Icon, Pill } from './ui';
 
 export type CaseDoc = { name: string; type: string; source: string; status: 'read' | 'missing'; fields?: number };
@@ -12,11 +12,11 @@ const ABBR: Record<string, string> = { 'Bill of lading': 'BL', 'Commercial invoi
 
 export function docFields(type: string, n: number): [string, string][] {
   switch (type) {
-    case 'Bill of lading': return [['BL number', 'MEDU48210937'], ['Shipper', 'Sinopower Electric Co., Shanghai'], ['Consignee', COMPANY], ['Vessel / voyage', 'MV Sample Voyager · 027E'], ['Port of loading', 'Shanghai, CN'], ['Port of discharge', 'Jebel Ali, AE'], ['Containers', `${n} × 40' HC`]];
+    case 'Bill of lading': return [['BL number', ACTIVE.c.bl], ['Shipper', 'Sinopower Electric Co., Shanghai'], ['Consignee', COMPANY], ['Vessel / voyage', ACTIVE.c.vessel], ['Port of loading', 'Shanghai, CN'], ['Port of discharge', 'Jebel Ali, AE'], ['Containers', `${n} × 40' HC`]];
     case 'Commercial invoice': return [['Invoice number', 'INV-0931'], ['Seller', 'Sinopower Electric Co.'], ['Buyer', COMPANY], ['Incoterm', 'CFR Jebel Ali'], ['Goods lines', '3 · HS 2106.90, 8525.89, 8504.40'], ['Total value', 'USD 112,350.00']];
     case 'Packing list': return [['Packages', '3,780 packages'], ['Gross weight', '48,600 kg'], ['Net weight', '45,920 kg'], ['Containers', String(n)]];
     case 'Certificate of origin': return [['Certificate number', 'CCPIT-27-118220'], ['Country of origin', 'China'], ['Issued by', 'CCPIT Shanghai'], ['Goods', 'As per invoice INV-0931']];
-    default: return [['Manifest number', 'MSC-027E-JEA-118'], ['Vessel', 'MV Sample Voyager · 027E'], ['Containers', String(n)], ['Cargo', 'Food preparations, CCTV cameras, power supplies'], ['HS codes (from shipper)', '2106.90 · 8525.89 · 8504.40']];
+    default: return [['Manifest number', ACTIVE.c.manifest], ['Vessel', ACTIVE.c.vessel], ['Containers', String(n)], ['Cargo', 'Food preparations, CCTV cameras, power supplies'], ['HS codes (from shipper)', '2106.90 · 8525.89 · 8504.40']];
   }
 }
 
@@ -24,8 +24,8 @@ export function docFields(type: string, n: number): [string, string][] {
 export function caseDocs(source: 'documents' | 'containers', files: string[] | undefined, extra: Record<string, string>): CaseDoc[] {
   if (source === 'containers') {
     return [
-      { name: 'BL_MEDU48210937 (e-BL)', type: 'Bill of lading', source: 'Fetched from Mediterranean Shipping', status: 'read', fields: 18 },
-      { name: 'Manifest MSC-027E-JEA-118', type: 'Cargo manifest', source: 'Fetched from Mediterranean Shipping', status: 'read', fields: 14 },
+      { name: `BL_${ACTIVE.c.bl} (e-BL)`, type: 'Bill of lading', source: `Fetched from ${ACTIVE.c.line}`, status: 'read', fields: 18 },
+      { name: `Manifest ${ACTIVE.c.manifest}`, type: 'Cargo manifest', source: `Fetched from ${ACTIVE.c.line}`, status: 'read', fields: 14 },
       ...(['Commercial invoice', 'Packing list'] as const).map(t => extra[t]
         ? { name: extra[t], type: t, source: 'Uploaded by you', status: 'read' as const, fields: t === 'Commercial invoice' ? 21 : 24 }
         : { name: 'Not uploaded yet', type: t, source: 'Needed before the declaration is filed', status: 'missing' as const }),

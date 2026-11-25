@@ -371,3 +371,8 @@ label {
 .ai-seg-you { box-shadow: 0 0 0 3px rgba(242,178,0,.18); }
 @keyframes ai-seg-flow { from { background-position: 200% 0; } to { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .ai-seg-run { animation: none; background: #1360d2; } }
+
+/* Full-page import flow: each page slides in */
+.ai-page-in { animation: ai-page-in .35s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes ai-page-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ai-page-in { animation: none; } }
