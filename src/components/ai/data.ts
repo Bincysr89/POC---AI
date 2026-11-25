@@ -304,3 +304,6 @@ export const CLEARANCE_DRAFTS: ClearanceDraft[] = [
   },
 ];
 export const sumFees = (p: Permit[]) => p.reduce((a, x) => a + Number(x.fee.replace(/,/g, '')), 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+
+/* Vessel arrival: the line said 06:00; marine traffic (AIS) showed the ship running late */
+export const VESSEL = { eta: '30 Nov 06:00', revised: '30 Nov 14:30', ataTime: '14:40', late: '8 h 40 min', found: '29 Nov 18:20' };

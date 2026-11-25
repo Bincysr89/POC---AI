@@ -376,3 +376,10 @@ label {
 .ai-page-in { animation: ai-page-in .35s cubic-bezier(.2,.7,.2,1) both; }
 @keyframes ai-page-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .ai-page-in { animation: none; } }
+
+/* Ship marker pulse on the vessel map */
+.ai-ship-ping { position: absolute; inset: 0; border-radius: 50%; background: rgba(242,178,0,.35); animation: ai-ship-ping 1.8s ease-out infinite; }
+@keyframes ai-ship-ping { from { transform: scale(.6); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ai-ship-ping { animation: none; opacity: .4; } }
+.leaflet-container { font-family: inherit; }
+.leaflet-tooltip { font-size: 14px; font-weight: 600; color: #0e1b3d; }

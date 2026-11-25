@@ -9,7 +9,7 @@ import { DhAmount } from '../Dh';
 import { CASES, DEFAULT_MY_AGENTS, DO_TOTAL, PILLS, USER_NAME, extractContainers, type MyAgent } from './data';
 import { ContainerDOCard } from './containers';
 import { AgentBuilderCard, AgentsContext, MyAgentsGrid } from './agents';
-import { AuditLogCard, CaseJourneyCard, type AuditEvent } from './journey';
+import { AUTO_DO_KEY, AuditLogCard, CaseJourneyCard, type AuditEvent } from './journey';
 import type { CompletionSummary } from './complete';
 import {
   DeclListCard, DeclReviewCard, DeclViewCard, DOApprovalCard, DOCostCard, DOListCard, ETokenCard, HandoffCard,
@@ -249,7 +249,13 @@ function Composer({ onSend, onFiles, onAct, hero, autoFocus }: { onSend: (t: str
 export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDashboard?: () => void; tabs?: React.ReactNode }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [pending, setPending] = useState<Pending | null>(null);
-  const [myAgents, setMyAgents] = useState<MyAgent[]>(DEFAULT_MY_AGENTS);
+  const [myAgents, setMyAgents] = useState<MyAgent[]>(() => {
+    let auto = false;
+    try { auto = sessionStorage.getItem(AUTO_DO_KEY) === '1'; } catch { /* not stored */ }
+    return auto
+      ? [{ id: 'autodo', name: 'Auto delivery orders', desc: 'Requests and pays the DO when containers are discharged, valid for the free days', trigger: 'Containers discharged', stat: 'Turned on from IMP-2027-00422', on: true, icon: 'do', isNew: true }, ...DEFAULT_MY_AGENTS]
+      : DEFAULT_MY_AGENTS;
+  });
   const agentsCtx = useMemo(() => ({
     agents: myAgents,
     add: (a: MyAgent) => setMyAgents(list => [a, ...list.map(x => ({ ...x, isNew: false }))]),
@@ -305,6 +311,10 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
   const pills = PILLS.slice(0, 7);
   const act = (intent: string, utter: string, payload?: Record<string, unknown>) => ask(intent, utter, payload);
   const running = myAgents.filter(a => a.on).length;
+  useEffect(() => {   // keep the Trade+ suggestion toggle in step with this agent
+    const a = myAgents.find(x => x.id === 'autodo');
+    if (a) try { sessionStorage.setItem(AUTO_DO_KEY, a.on ? '1' : '0'); } catch { /* not stored */ }
+  }, [myAgents]);
 
   return (
     <AgentsContext.Provider value={agentsCtx}>

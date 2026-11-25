@@ -10,11 +10,12 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DhAmount } from '../Dh';
-import { ACTIVE, COMPANY, WALLET_BALANCE, type Permit } from './data';
+import { ACTIVE, COMPANY, VESSEL, WALLET_BALANCE, type Permit } from './data';
 import type { Ask } from './flows';
 import { Btn, C, Field, Icon, Pill, SuccessBanner } from './ui';
 import { CaseDocuments, caseDocs } from './docs';
 import { ImportComplete, type CompletionSummary } from './complete';
+import { VesselMap } from './vesselmap';
 
 type Kind = 'agent' | 'you' | 'external' | 'signal';
 export type AuditEvent = { time: string; track: string; actor: string; kind: Kind; action: string; tool: string; outcome: string };
@@ -28,7 +29,7 @@ function caseData(nos: string[]) {
   const list = nos.length ? nos : DEFAULT_CASE_CONTAINERS;
   const n = list.length;
   const CONTAINERS = list.map((no, i) => {
-    const mins = 9 * 60 + 10 + i * 45;
+    const mins = 15 * 60 + 50 + i * 45;   // discharge starts after the late arrival (ATA 14:40)
     return { no, size: "40' HC", at: `30 Nov ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}` };
   });
   const thc = n * 945;
@@ -55,6 +56,11 @@ const HS_LINES = [
   { hs: '8504.40', d: 'Power supply units', permit: 'None needed' },
 ];
 const DUTY = '20,630.00', DECL_FEE = '120.00', DECL_PAY = '20,750.00';
+/* Arrival: the line said 06:00, marine traffic showed the ship running late */
+const ARR = 3;
+export const AUTO_DO_KEY = 'dt-auto-do';
+const FREE_DAYS = 5, FREE_UNTIL = '5 Dec 2027', AUTO_DO_CAP = '6,000.00';
+const fullDate = (t: string) => t.replace(/^(\d+ \w+) /, '$1 2027, ');   // '30 Nov 06:00' → '30 Nov 2027, 06:00'   // vessel steps before discharge: ETA, delay check, arrival
 const HAULIER = { name: 'Al Bahar Transport LLC', contract: 'Long-term contract until Jun 2028', rate: '650.00' };
 
 /* ── Track scripts ──────────────────────────────────────────────────── */
@@ -63,6 +69,7 @@ type Step = {
   gate?: 'do' | 'permits' | 'declare' | 'slots';
   requires?: (idx: Record<TrackKey, number>) => string | null; // the reason it is waiting, if any
   log?: AuditEvent[];
+  ticks?: number;   // clock ticks this step takes (default 1)
 };
 
 const T = (track: string) => (time: string, actor: string, kind: Kind, action: string, tool: string, outcome: string): AuditEvent => ({ time, track, actor, kind, action, tool, outcome });
@@ -73,7 +80,11 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
   const TRACKS: Record<TrackKey, { name: string; short: string; icon: string; steps: Step[] }> = {
   V: { name: 'Vessel arrival', short: 'Vessel arrival notice', icon: 'ship', steps: [
     { id: 'v1', t: 'ETA confirmed with the line', who: 'Status agent', kind: 'agent', log: [v('24 Nov 09:33', 'Status agent', 'agent', `ETA 30 Nov 06:00 confirmed for ${vesselShort()}`, 'portcall.eta', 'Done')] },
-    { id: 'v2', t: 'Vessel arrived (ATA)', who: 'Port · DP World', kind: 'external', log: [v('30 Nov 05:40', 'DP World', 'external', 'Vessel arrived at Jebel Ali T3, 20 min ahead of ETA', 'portcall.status', 'Arrived')] },
+    { id: 'v1d', t: 'Delay found in marine traffic data', who: 'Status agent', kind: 'agent', log: [
+      v('29 Nov 18:20', 'Status agent', 'agent', `Marine traffic (AIS) shows ${vesselShort()} about 8 h behind the line's ETA; revised ETA ${VESSEL.revised}`, 'marinetraffic.ais', 'Delay found'),
+      v('29 Nov 18:22', 'Status agent', 'agent', 'Told you and moved the DO, permit and haulage plans to the new arrival time', 'notify.user', 'Sent'),
+    ] },
+    { id: 'v2', t: 'Vessel arrived (ATA)', who: 'Port · DP World', kind: 'external', ticks: 8, log: [v(`30 Nov ${VESSEL.ataTime}`, 'DP World', 'external', `Vessel arrived at Jebel Ali T3, ${VESSEL.late} after the line's ETA`, 'portcall.status', 'Arrived late')] },
     ...CONTAINERS.map((k, i) => ({ id: `v3-${i}`, t: 'Containers discharged', who: 'Status agent', kind: 'agent' as Kind, show: i === 0,
       log: [v(k.at, 'Status agent', 'agent', `${k.no} discharged, no holds`, 'container.status', 'Discharged')] })),
   ] },
@@ -83,7 +94,7 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
     { id: 'd3', t: 'Sent to the shipping agent', who: 'DO agent', kind: 'agent', log: [d('24 Nov 10:03', 'DO agent', 'agent', `Submitted the paid request to ${ACTIVE.c.line} via Trade+`, 'do.submit', 'Submitted')] },
     { id: 'd4', t: 'Delivery order released', who: 'Shipping agent', kind: 'external',
       requires: i => (i.V < TRACKS.V.steps.length ? 'Released once all containers are discharged' : null),
-      log: [d('30 Nov 12:05', ACTIVE.c.line, 'external', `Released DO-27-41902 for ${n} containers`, 'do.status', 'Released')] },
+      log: [d('30 Nov 18:40', ACTIVE.c.line, 'external', `Released DO-27-41902 for ${n} containers`, 'do.status', 'Released')] },
   ] },
   C: { name: 'Integrated Clearance', short: 'Permits & declaration', icon: 'decl', steps: [
     { id: 'c1', t: 'HS codes checked for permits', who: 'HS agent', kind: 'agent', log: [c('24 Nov 09:36', 'HS agent', 'agent', `${(ACTIVE.c.hs ?? HS_LINES).length} lines classified: ${permitsOf().map(p => `${p.hs} needs ${p.entity === 'Dubai Municipality' ? 'DM' : p.entity}`).join(', ')}`, 'hs.classify', 'Done')] },
@@ -97,7 +108,7 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
     { id: 'c6', t: 'Submit declaration to Dubai Customs', who: 'You', kind: 'you', gate: 'declare' },
     { id: 'c7', t: 'Cleared by Dubai Customs', who: 'Dubai Customs', kind: 'external',
       requires: i => (i.D < TRACKS.D.steps.length ? 'Customs clears once the DO is released' : null),
-      log: [c('30 Nov 13:30', 'Dubai Customs', 'external', 'Declaration 101-27-0049310 cleared · green channel', 'declaration.status', 'Cleared')] },
+      log: [c('30 Nov 19:10', 'Dubai Customs', 'external', 'Declaration 101-27-0049310 cleared · green channel', 'declaration.status', 'Cleared')] },
   ] },
   H: { name: 'CargoWaves', short: 'Haulage & delivery', icon: 'truck', steps: [
     { id: 'h1', t: 'Haulage order drafted', who: 'CargoWaves agent', kind: 'agent', log: [h('24 Nov 09:40', 'CargoWaves agent', 'agent', `Drafted order for ${n} containers with ${HAULIER.name} (contract rate)`, 'cargowaves.order.draft', 'Draft ready')] },
@@ -105,10 +116,10 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
     { id: 'h3', t: 'Sent to the haulier', who: 'CargoWaves agent', kind: 'agent', log: [h('24 Nov 10:16', 'CargoWaves agent', 'agent', 'Sent the order to the haulier for acceptance', 'cargowaves.order.send', 'Sent')] },
     { id: 'h4', t: 'Haulier accepted the order', who: HAULIER.name, kind: 'external',
       requires: i => (i.C < TRACKS.C.steps.length || i.D < TRACKS.D.steps.length ? 'Haulier accepts once the DO is released and customs clears' : null),
-      log: [h('30 Nov 13:45', HAULIER.name, 'external', `Accepted the order and assigned ${n} trucks`, 'cargowaves.order.status', 'Accepted')] },
+      log: [h('30 Nov 19:25', HAULIER.name, 'external', `Accepted the order and assigned ${n} trucks`, 'cargowaves.order.status', 'Accepted')] },
     { id: 'h5', t: 'eToken generated, delivery scheduled', who: 'CargoWaves agent', kind: 'agent', log: [
-      h('30 Nov 13:48', 'DP World', 'external', `Generated eToken ET-27-0091602 for ${n} trucks`, 'etoken.issue', 'Issued'),
-      h('30 Nov 13:50', 'CargoWaves agent', 'agent', `Scheduled delivery of ${n} containers to your warehouse`, 'cargowaves.schedule', 'Scheduled'),
+      h('30 Nov 19:28', 'DP World', 'external', `Generated eToken ET-27-0091602 for ${n} trucks`, 'etoken.issue', 'Issued'),
+      h('30 Nov 19:30', 'CargoWaves agent', 'agent', `Scheduled delivery of ${n} containers to your warehouse`, 'cargowaves.schedule', 'Scheduled'),
     ] },
   ] },
   };
@@ -330,8 +341,11 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   const cardRef = useRef<HTMLDivElement>(null);
   const prevDone = useRef<Record<TrackKey, boolean>>({ V: false, D: false, C: false, H: false });
   const [flash, setFlash] = useState<TrackKey | null>(null);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [autoDo, setAutoDo] = useState(() => { try { return sessionStorage.getItem(AUTO_DO_KEY) === '1'; } catch { return false; } });
   const gateRef = useRef<HTMLDivElement>(null);
   const idxRef = useRef(idx); idxRef.current = idx;
+  const waitRef = useRef<Partial<Record<TrackKey, number>>>({});
 
   const len = (k: TrackKey) => TRACKS[k].steps.length;
   const doneTrack = (k: TrackKey) => idx[k] >= len(k);
@@ -359,6 +373,9 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
         const s = TRACKS[k].steps[cur[k]];
         if (!s || s.gate) return;
         if (s.requires && s.requires(cur)) return;
+        const w = (waitRef.current[k] ?? 0) + 1;
+        if (w < (s.ticks ?? 1)) { waitRef.current[k] = w; return; }
+        waitRef.current[k] = 0;
         if (s.log) add.push(...s.log);
         next[k] = cur[k] + 1;
       });
@@ -405,9 +422,9 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
     const blocked = s?.requires?.(idx) ?? null;
     const state: 'done' | 'you' | 'blocked' | 'run' = i >= len(k) ? 'done' : s?.gate ? 'you' : blocked ? 'blocked' : 'run';
     const pct = Math.round((Math.min(i, len(k)) / len(k)) * 100);
-    const discharged = Math.min(NC, Math.max(0, idx.V - 2));
+    const discharged = Math.min(NC, Math.max(0, idx.V - ARR));
     const line = {
-      V: idx.V === 0 ? 'Confirming ETA…' : idx.V === 1 ? 'ETA 30 Nov 06:00 · on the way' : `ATA 30 Nov 05:40 · ${discharged} of ${NC} discharged`,
+      V: idx.V === 0 ? 'Confirming ETA…' : idx.V === 1 ? `ETA ${VESSEL.eta} · checking marine traffic…` : idx.V === 2 ? `Delayed · revised ETA ${VESSEL.revised}` : `ATA 30 Nov ${VESSEL.ataTime} (${VESSEL.late} late) · ${discharged} of ${NC} discharged`,
       D: ['Drafting DO request…', 'Draft ready · review and pay', 'Sending to shipping agent…', blocked ? 'Paid · waiting for discharge' : 'Releasing…', 'DO-27-41902 released'][Math.min(i, 4)],
       C: ['Checking HS codes…', 'Drafting DM and SIRA permits…', '2 permits ready · check and pay', 'Waiting for permit approvals…', 'Drafting declaration…', 'Declaration ready to submit', blocked ? 'Submitted · waiting for DO' : 'Clearing…', 'Cleared · green channel'][Math.min(i, 7)],
       H: ['Drafting haulage order…', 'Haulier nominated · confirm slot', 'Sending to haulier…', blocked ? 'Sent · waiting for DO and clearance' : 'Haulier reviewing…', 'Scheduling delivery…', `Delivery ${slotText(slot)}`][Math.min(i, 5)],
@@ -418,8 +435,8 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   const stepsFor = (k: TrackKey): { s: Step; st: DotSt }[] =>
     TRACKS[k].steps.map((s, i) => ({ s, i })).filter(({ s }) => s.show !== false).map(({ s, i }) => {
       if (k === 'V' && s.id.startsWith('v3')) {
-        const n = Math.min(NC, Math.max(0, idx.V - 2));
-        return { s: { ...s, t: `Containers discharged · ${n} of ${NC}` }, st: n >= NC ? 'done' : idx.V >= 2 ? 'run' : 'wait' };
+        const n = Math.min(NC, Math.max(0, idx.V - ARR));
+        return { s: { ...s, t: `Containers discharged · ${n} of ${NC}` }, st: n >= NC ? 'done' : idx.V >= ARR ? 'run' : 'wait' };
       }
       return { s, st: i < idx[k] ? 'done' : i === idx[k] ? (s.gate ? 'you' : s.requires?.(idx) ? 'blocked' : 'run') : 'wait' };
     });
@@ -439,7 +456,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   };
   const STEPPER_NAME: Record<TrackKey, string> = { V: 'Vessel Operations', D: 'Trade+', C: 'Integrated Clearance', H: 'Cargo Waves' };
   const SHORT: Record<string, string> = {
-    v1: 'ETA confirmed', v2: 'Vessel arrived', 'v3-0': 'Containers off the vessel',
+    v1: 'ETA confirmed', v1d: 'Delay found', v2: 'Vessel arrived late', 'v3-0': 'Containers off the vessel',
     d1: 'DO drafted', d2: 'You pay', d3: 'Sent to shipping agent', d4: 'DO released',
     c1: 'HS codes checked', c2: 'Permits drafted', c3: 'You pay permits', c4: 'Permits approved', c5: 'Declaration drafted', c6: 'You submit', c7: 'Cleared',
     h1: 'Order drafted', h2: 'You pick a slot', h3: 'Sent to haulier', h4: 'Haulier accepts', h5: 'eToken & delivery',
@@ -475,7 +492,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   /* Steps of a track, in plain words */
   const flowItems = (k: TrackKey): FlowItem[] => stepsFor(k).map(({ s, st }) => ({
     id: s.id, st, kind: s.kind,
-    label: s.id === 'v3-0' ? `${SHORT[s.id]} · ${Math.min(NC, Math.max(0, idx.V - 2))}/${NC}` : SHORT[s.id] ?? s.t,
+    label: s.id === 'v3-0' ? `${SHORT[s.id]} · ${Math.min(NC, Math.max(0, idx.V - ARR))}/${NC}` : SHORT[s.id] ?? s.t,
   }));
 
   /* Two-part body used by every checkpoint: what the agent prepared / what you do */
@@ -499,26 +516,89 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   );
   const inputCls = 'mt-1 w-full h-[38px] rounded-[6px] px-2 text-[14px] bg-white outline-none focus:border-[#1360d2]';
 
+  /* AI suggestion on Trade+: automate future delivery orders */
+  const payLabel = ['Dubai Trade wallet', 'Credit facility'][method];
+  const payInText = method === 0 ? 'Dubai Trade wallet' : 'credit facility';
+  const toggleAutoDo = () => {
+    const on = !autoDo;
+    setAutoDo(on);
+    try { sessionStorage.setItem(AUTO_DO_KEY, on ? '1' : '0'); } catch { /* not stored */ }
+    setLog(l => [...l, d('24 Nov 10:06', 'You', 'you', on ? `Turned on automatic delivery orders (${payInText}, valid for the free days)` : 'Turned off automatic delivery orders', 'agents.autodo', on ? 'Enabled' : 'Disabled')]);
+  };
+  const autoDoCard = (
+    <div className="rounded-[16px] border p-4 sm:p-5" style={{ borderColor: autoDo ? '#bfe3cc' : '#cfe0fb', background: autoDo ? 'linear-gradient(180deg,#f2fbf5,#ffffff)' : 'linear-gradient(180deg,#f3f8ff,#ffffff)' }}>
+      <div className="flex items-start gap-3">
+        <span className="size-[40px] rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#1360d2,#4f8ff7)', boxShadow: '0 6px 14px -8px rgba(19,96,210,.6)' }}><Icon name="bot" size={18} /></span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] text-[#1360d2] inline-flex items-center gap-1" style={{ fontWeight: 700 }}><Icon name="sparkle" size={14} />AI suggestion</p>
+          <p className="text-[17px] text-[#0e1b3d] leading-snug" style={{ fontWeight: 700 }}>Automate your future delivery orders</p>
+          <p className="text-[14px] text-[#40484f] mt-1 leading-snug">{idx.D >= 2 ? 'You paid this DO yourself. Next time, the' : 'Instead of reviewing and paying each delivery order yourself, the'} DO agent can request and pay it as soon as your containers are discharged.</p>
+        </div>
+        <label className="flex items-center gap-2 flex-shrink-0 cursor-pointer">
+          <span className="text-[14px] hidden sm:inline" style={{ color: autoDo ? '#17703a' : C.muted, fontWeight: 600 }}>{autoDo ? 'On' : 'Off'}</span>
+          <button type="button" role="switch" aria-checked={autoDo} aria-label="Automate future delivery orders" onClick={toggleAutoDo}
+            className="w-[46px] h-[26px] rounded-full relative transition-colors" style={{ background: autoDo ? '#28a745' : '#c9d4ec' }}>
+            <span className="absolute top-[3px] size-[20px] rounded-full bg-white transition-all shadow" style={{ left: autoDo ? 23 : 3 }} />
+          </button>
+        </label>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+        {[
+          ['wallet', 'Same payment method', `${payLabel}, as you used today. Paid automatically, no review needed.`],
+          ['clock', 'Validity from your free days', `${ACTIVE.c.line} gives ${FREE_DAYS} free days after discharge, so the DO is valid until the last free day (for this shipment, ${FREE_UNTIL}).`],
+          ['shield', 'You stay in control', `Pays up to Dh ${AUTO_DO_CAP} per DO without asking; above that it waits for you. You're told after every payment.`],
+        ].map(([ic, t, d2]) => (
+          <div key={t} className="rounded-[12px] px-3 py-3 flex items-start gap-3" style={{ background: '#ffffff', border: '1px solid #e6ebf3' }}>
+            <Icon name={ic} size={18} className="text-[#1360d2] mt-[2px] flex-shrink-0" />
+            <span className="min-w-0"><span className="block text-[14px] text-[#111838]" style={{ fontWeight: 700 }}>{t}</span><span className="block text-[14px] text-[#4f5a78] leading-snug">{d2}</span></span>
+          </div>
+        ))}
+      </div>
+      {autoDo && (
+        <div className="mt-4"><SuccessBanner><strong>Success:</strong> Automatic delivery orders are on. From your next import, the DO agent requests and pays the DO with your {payInText}, valid for the free days. You'll find it under Your AI agents on the AI home, where you can switch it off anytime.</SuccessBanner></div>
+      )}
+    </div>
+  );
+
   const detail = (k: TrackKey) => {
     if (k === 'V') return (
       <div className="grid grid-cols-1 gap-3">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 rounded-[12px] p-3" style={{ background: '#f7f9fd' }}>
-          <Field label="Vessel / voyage" value={ACTIVE.c.vessel} />
-          <Field label="Bill of lading" value={ACTIVE.c.bl} />
-          <Field label="ETA (expected)" value={idx.V >= 1 ? '30 Nov 2027, 06:00' : 'Confirming…'} />
-          <Field label="ATA (actual)" value={idx.V >= 2 ? <span className="text-[#17703a]">30 Nov 2027, 05:40</span> : 'Not arrived yet'} />
+        <div className="rounded-[12px] p-3" style={{ background: '#f7f9fd' }}>
+          <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+            <Field label="Vessel / voyage" value={ACTIVE.c.vessel} />
+            <Btn size="sm" variant="secondary" icon="ship" onClick={() => setMapOpen(true)}>View ship on map</Btn>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3">
+            <Field label="ETA from shipping agent" value={idx.V >= 1 ? fullDate(VESSEL.eta) : 'Confirming…'} />
+            <Field label="Revised ETA (marine traffic)" value={idx.V >= 2 ? <span className="text-[#8a5a00]">{fullDate(VESSEL.revised)}</span> : idx.V === 1 ? 'Checking…' : '—'} />
+            <Field label="ATA (actual)" value={idx.V >= ARR ? <span className="text-[#8a5a00]">30 Nov 2027, {VESSEL.ataTime}</span> : 'Not arrived yet'} />
+            <Field label="Delay against ETA" value={idx.V >= ARR ? <span className="text-[#8a5a00]">{VESSEL.late}</span> : idx.V === 2 ? <span className="text-[#8a5a00]">About 8 h 30 min</span> : '—'} />
+          </div>
         </div>
+        {idx.V >= 2 && (
+          <div className="rounded-[12px] px-4 py-3 flex items-start gap-3" style={{ background: '#fff8e6', border: '1px solid #f2d98a' }}>
+            <span className="size-[34px] rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#1360d2,#4f8ff7)' }}><Icon name="bot" size={16} /></span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[15px] text-[#111838]" style={{ fontWeight: 700 }}>Delay found by the AI agent</p>
+              <p className="text-[14px] text-[#40484f] leading-snug mt-[2px]">
+                The shipping agent gave an ETA of {VESSEL.eta}. On {VESSEL.found} the Status agent checked the marine traffic system (AIS) and saw {vesselShort()} sailing at 11.2 knots after slowing for weather in the Gulf of Oman, about 8 hours behind schedule. It revised the arrival to {VESSEL.revised} and moved your delivery order, permit and haulage plans to match.
+                {idx.V >= ARR && <> The vessel arrived at {VESSEL.ataTime}, {VESSEL.late} after the shipping agent's ETA.</>}
+              </p>
+              <button type="button" onClick={() => setMapOpen(true)} className="mt-2 text-[14px] text-[#1360d2] hover:underline underline-offset-2 inline-flex items-center gap-1" style={{ fontWeight: 600 }}><Icon name="ship" size={15} />Track the ship on the map</button>
+            </div>
+          </div>
+        )}
         <div className="rounded-[12px] border overflow-hidden" style={{ borderColor: '#eef1f6' }}>
           <table className="w-full">
             <thead><tr className="bg-[#f3f6fb]"><th className={th} style={{ fontWeight: 500 }}>Container</th><th className={th} style={{ fontWeight: 500 }}>Size</th><th className={th} style={{ fontWeight: 500 }}>Status</th><th className={`${th} hidden sm:table-cell`} style={{ fontWeight: 500 }}>Discharged at</th></tr></thead>
             <tbody>
               {CONTAINERS.map((ct, i) => {
-                const dis = idx.V - 2 > i;
+                const dis = idx.V - ARR > i;
                 return (
                   <tr key={ct.no} className="border-t text-[14px] text-[#111838]" style={{ borderColor: '#eef1f6' }}>
                     <td className="px-3 py-[9px]" style={{ fontWeight: 600, ...mono }}>{ct.no}</td>
                     <td className="px-3 py-[9px]">{ct.size}</td>
-                    <td className="px-3 py-[9px]">{dis ? <Pill tone="done">Discharged</Pill> : idx.V >= 2 ? <Pill tone="run">Discharging</Pill> : <Pill tone="wait">On board</Pill>}</td>
+                    <td className="px-3 py-[9px]">{dis ? <Pill tone="done">Discharged</Pill> : idx.V >= ARR ? <Pill tone="run">Discharging</Pill> : <Pill tone="wait">On board</Pill>}</td>
                     <td className="px-3 py-[9px] text-[#4f5a78] hidden sm:table-cell">{dis ? ct.at : '—'}</td>
                   </tr>
                 );
@@ -529,7 +609,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
       </div>
     );
 
-    if (k === 'D') return idx.D === 1 ? (
+    if (k === 'D') return <div className="grid grid-cols-1 gap-4">{idx.D === 1 ? (
       <Checkpoint
         prepared={<>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
@@ -562,7 +642,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
         </div>
         {idx.D >= 4 && <SuccessBanner><strong>Success:</strong> Delivery order <strong>DO-27-41902</strong> released by the shipping agent for {NC} containers.</SuccessBanner>}
       </div>
-    );
+    )}{autoDoCard}</div>;
 
     if (k === 'C') return (
       <div className="grid grid-cols-1 gap-3">
@@ -870,7 +950,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
 
         {/* ── Documents page ── */}
         {sel === 'DOCS' && (() => {
-          const discharged = idx.V >= len('V') ? NC : Math.max(0, idx.V - 2);
+          const discharged = idx.V >= len('V') ? NC : Math.max(0, idx.V - ARR);
           const agentsUsed: { k: TrackKey | 'DOCS'; title: string; agents: { name: string; job: string }[] }[] = [
             { k: 'DOCS', title: 'Documents', agents: [
               source === 'containers'
@@ -934,7 +1014,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
                         <tr key={ct.no} className="border-t text-[14px] text-[#111838]" style={{ borderColor: '#eef1f6' }}>
                           <td className="px-3 py-[9px]" style={{ fontWeight: 600, ...mono }}>{ct.no}</td>
                           <td className="px-3 py-[9px]">{ct.size}</td>
-                          <td className="px-3 py-[9px]">{i < discharged ? <Pill tone="done">Discharged · {ct.at}</Pill> : idx.V >= 2 ? <Pill tone="run">Discharging</Pill> : <Pill tone="wait">On board</Pill>}</td>
+                          <td className="px-3 py-[9px]">{i < discharged ? <Pill tone="done">Discharged · {ct.at}</Pill> : idx.V >= ARR ? <Pill tone="run">Discharging</Pill> : <Pill tone="wait">On board</Pill>}</td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -1038,6 +1118,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
           </div>
         )}
       </div>
+      {mapOpen && <VesselMap vessel={vesselShort()} arrived={idx.V >= ARR} delayed={idx.V >= 2} discharged={Math.min(NC, Math.max(0, idx.V - ARR))} total={NC} onClose={() => setMapOpen(false)} />}
       {barSlot && createPortal(
         <>
           <div className="flex items-center gap-3">
