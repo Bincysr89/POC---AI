@@ -86,7 +86,7 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
       log: [d('30 Nov 12:05', ACTIVE.c.line, 'external', `Released DO-27-41902 for ${n} containers`, 'do.status', 'Released')] },
   ] },
   C: { name: 'Integrated Clearance', short: 'Permits & declaration', icon: 'decl', steps: [
-    { id: 'c1', t: 'HS codes checked for permits', who: 'Declaration agent', kind: 'agent', log: [c('24 Nov 09:36', 'Declaration agent', 'agent', '3 lines classified: 2106.90 needs DM, 8525.89 needs SIRA', 'hs.classify', 'Done')] },
+    { id: 'c1', t: 'HS codes checked for permits', who: 'HS agent', kind: 'agent', log: [c('24 Nov 09:36', 'HS agent', 'agent', `${(ACTIVE.c.hs ?? HS_LINES).length} lines classified: ${permitsOf().map(p => `${p.hs} needs ${p.entity === 'Dubai Municipality' ? 'DM' : p.entity}`).join(', ')}`, 'hs.classify', 'Done')] },
     { id: 'c2', t: 'Permit requests drafted', who: permitsOf().map(p => p.agent).join(' · '), kind: 'agent', log: [
       ...permitsOf().map((p, i) => c(`24 Nov 09:3${8 + i}`, p.agent, 'agent', `Drafted ${p.type.toLowerCase()} request with ${p.entity}`, `${p.entity === 'SIRA' ? 'sira' : 'dm'}.permit.draft`, 'Draft ready')),
     ] },
@@ -869,12 +869,122 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
         )}
 
         {/* ── Documents page ── */}
-        {sel === 'DOCS' && (
-          <section className="px-5 sm:px-6 py-5">
-            <CaseDocuments source={source} files={files} containers={NC} extra={extra}
-              onUpload={t => setExtra(x => ({ ...x, [t]: t === 'Commercial invoice' ? 'Invoice_INV-0931.pdf' : 'Packing_list.pdf' }))} />
-          </section>
-        )}
+        {sel === 'DOCS' && (() => {
+          const discharged = idx.V >= len('V') ? NC : Math.max(0, idx.V - 2);
+          const agentsUsed: { k: TrackKey | 'DOCS'; title: string; agents: { name: string; job: string }[] }[] = [
+            { k: 'DOCS', title: 'Documents', agents: [
+              source === 'containers'
+                ? { name: 'Lookup agent', job: `Found BL ${ACTIVE.c.bl} and fetched the documents from ${ACTIVE.c.line}` }
+                : { name: 'Document AI', job: 'Read your documents and extracted the shipment fields' },
+              { name: 'Cargo owner agent', job: 'Confirmed you are the consignee on the BL' },
+            ] },
+            { k: 'V', title: META.V.title, agents: [{ name: 'Status agent', job: 'Watches ETA, arrival and container discharge' }] },
+            { k: 'D', title: META.D.title, agents: [{ name: 'DO agent', job: `Drafts the delivery order and sends it to ${ACTIVE.c.line}` }] },
+            { k: 'C', title: META.C.title, agents: [
+              { name: 'HS agent', job: `Checked ${HSL.length} HS codes and the permits they need` },
+              ...PERMS.map(p => ({ name: p.agent, job: `${p.type} with ${p.entity} for HS ${p.hs}` })),
+              { name: 'Declaration agent', job: 'Drafts the customs declaration with your permits attached' },
+            ] },
+            { k: 'H', title: META.H.title, agents: [
+              { name: 'CargoWaves agent', job: `Books ${HAULIER.name}, your contracted haulier` },
+              { name: 'eToken agent', job: 'Issues the eToken for the gate-out' },
+            ] },
+          ];
+          const groupState = (k: TrackKey | 'DOCS') => (k === 'DOCS' ? 'done' : trackInfo(k).state);
+          const acts = (name: string) => log.filter(e => e.actor === name || (name === 'Lookup agent' && e.tool === 'container.lookup')).length;
+          const box = 'rounded-[14px] border p-4 sm:p-5 min-w-0';
+          return (
+            <section className="px-5 sm:px-6 py-5 grid grid-cols-1 gap-5">
+              {/* Shipment details */}
+              <div className={box} style={{ borderColor: '#e3e8f3' }}>
+                <p className="text-[16px] text-[#111838] mb-3" style={{ fontWeight: 700 }}>Shipment details</p>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
+                  <Field label="Bill of lading" value={ACTIVE.c.bl} />
+                  <Field label="Import case" value={ACTIVE.c.caseId} />
+                  <Field label="Shipping line" value={ACTIVE.c.line} />
+                  <Field label="Vessel / voyage" value={ACTIVE.c.vessel} />
+                  <Field label="Port of loading" value={ACTIVE.c.origin} />
+                  <Field label="Port of discharge" value="Jebel Ali T3" />
+                  <Field label="Consignee" value={COMPANY} />
+                  <Field label="Containers" value={HC} />
+                </div>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
+                  <div className="rounded-[12px] border overflow-x-auto" style={{ borderColor: '#eef1f6' }}>
+                    <p className="px-3 pt-[10px] pb-2 text-[14px] text-[#111838] flex items-center gap-2" style={{ fontWeight: 600 }}><Icon name="box" size={16} className="text-[#1360d2]" />{NC} containers · {discharged} discharged</p>
+                    <table className="w-full">
+                      <thead><tr className="bg-[#f3f6fb]"><th className={th}>Container</th><th className={th}>Size</th><th className={th}>Status</th></tr></thead>
+                      <tbody>{CONTAINERS.map((ct, i) => (
+                        <tr key={ct.no} className="border-t text-[14px] text-[#111838]" style={{ borderColor: '#eef1f6' }}>
+                          <td className="px-3 py-[9px]" style={{ fontWeight: 600, ...mono }}>{ct.no}</td>
+                          <td className="px-3 py-[9px]">{ct.size}</td>
+                          <td className="px-3 py-[9px]">{i < discharged ? <Pill tone="done">Discharged · {ct.at}</Pill> : idx.V >= 2 ? <Pill tone="run">Discharging</Pill> : <Pill tone="wait">On board</Pill>}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                  <div className="rounded-[12px] border overflow-x-auto" style={{ borderColor: '#eef1f6' }}>
+                    <p className="px-3 pt-[10px] pb-2 text-[14px] text-[#111838] flex items-center gap-2" style={{ fontWeight: 600 }}><Icon name="decl" size={16} className="text-[#1360d2]" />{HSL.length} HS codes · {HSL.filter(l => l.permit !== 'None needed').length} need a permit</p>
+                    <table className="w-full">
+                      <thead><tr className="bg-[#f3f6fb]"><th className={th}>HS code</th><th className={th}>Goods</th><th className={th}>Permit</th></tr></thead>
+                      <tbody>{HSL.map(l => (
+                        <tr key={l.hs} className="border-t text-[14px] text-[#111838]" style={{ borderColor: '#eef1f6' }}>
+                          <td className="px-3 py-[9px]" style={{ fontWeight: 600 }}>{l.hs}</td>
+                          <td className="px-3 py-[9px]">{l.d}</td>
+                          <td className="px-3 py-[9px]">{l.permit === 'None needed' ? <span className="text-[#4f5a78]">None needed</span> : <Pill tone="run">{l.permit === 'Dubai Municipality' ? 'DM' : l.permit}</Pill>}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Documents */}
+              <div className={box} style={{ borderColor: '#e3e8f3' }}>
+                <CaseDocuments source={source} files={files} containers={NC} extra={extra}
+                  onUpload={t => setExtra(x => ({ ...x, [t]: t === 'Commercial invoice' ? 'Invoice_INV-0931.pdf' : 'Packing_list.pdf' }))} />
+              </div>
+
+              {/* AI agents used */}
+              <div className={box} style={{ borderColor: '#e3e8f3' }}>
+                <div className="flex items-end justify-between gap-3 mb-3 flex-wrap">
+                  <div>
+                    <p className="text-[16px] text-[#111838]" style={{ fontWeight: 700 }}>AI agents on this import</p>
+                    <p className="text-[14px] text-[#4f5a78]">{agentsUsed.reduce((a, g) => a + g.agents.length, 0)} agents across the documents and the four tracks. Every action they took is in the audit log.</p>
+                  </div>
+                  <Btn size="sm" variant="secondary" icon="history" onClick={() => goTo('AUDIT')}>View audit log</Btn>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {agentsUsed.map(g => {
+                    const st = groupState(g.k);
+                    return (
+                      <div key={g.k} className="rounded-[12px] border p-4" style={{ borderColor: '#e6ebf3', background: '#fbfcff' }}>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <span className="text-[15px] text-[#111838]" style={{ fontWeight: 700 }}>{g.title}</span>
+                          <Pill tone={st === 'done' ? 'done' : st === 'you' ? 'you' : st === 'blocked' ? 'wait' : 'run'}>{st === 'done' ? 'Done' : st === 'you' ? 'Waiting for you' : st === 'blocked' ? 'Waiting' : 'Working'}</Pill>
+                        </div>
+                        <ul className="grid grid-cols-1 gap-3">
+                          {g.agents.map(a => {
+                            const n = acts(a.name);
+                            return (
+                              <li key={a.name} className="flex items-start gap-3">
+                                <span className="size-[34px] rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#1360d2,#4f8ff7)' }}><Icon name="bot" size={16} /></span>
+                                <span className="min-w-0">
+                                  <span className="block text-[14px] text-[#111838]" style={{ fontWeight: 600 }}>{a.name}</span>
+                                  <span className="block text-[14px] text-[#4f5a78] leading-snug">{a.job}</span>
+                                  {n > 0 && <span className="block text-[14px] text-[#17703a] mt-[2px]" style={{ fontWeight: 600 }}>{n} action{n > 1 ? 's' : ''} so far</span>}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          );
+        })()}
 
         {/* ── Audit log so far ── */}
         {sel === 'AUDIT' && (
