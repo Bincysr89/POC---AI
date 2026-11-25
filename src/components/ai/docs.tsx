@@ -119,16 +119,16 @@ export function DocViewer({ doc, containers, onClose }: { doc: CaseDoc; containe
 }
 
 /* Section used inside the import journey */
-export function CaseDocuments({ source, files, containers, extra, onUpload }: { source: 'documents' | 'containers'; files?: string[]; containers: number; extra: Record<string, string>; onUpload: (type: string) => void }) {
+export function CaseDocuments({ source, files, containers, extra, onUpload, hideTitle }: { source: 'documents' | 'containers'; files?: string[]; containers: number; extra: Record<string, string>; onUpload: (type: string) => void; hideTitle?: boolean }) {
   const [view, setView] = useState<CaseDoc | null>(null);
   const docs = caseDocs(source, files, extra);
   const missing = docs.filter(d => d.status === 'missing').length;
   return (
     <>
-      <div className="flex items-end justify-between gap-3 mb-3 flex-wrap">
+      {!hideTitle && <div className="flex items-end justify-between gap-3 mb-3 flex-wrap">
         <p className="text-[16px] text-[#111838]" style={{ fontWeight: 600 }}>Documents on this case <span className="text-[#4f5a78]" style={{ fontWeight: 500 }}>· {docs.length - missing} of {docs.length}</span></p>
         {missing > 0 && <span className="text-[14px] text-[#8a5a00]">Upload the rest anytime; the declaration agent asks before filing.</span>}
-      </div>
+      </div>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {docs.map(d => (
           <DocTile key={d.type + d.name} doc={d} onView={() => setView(d)}

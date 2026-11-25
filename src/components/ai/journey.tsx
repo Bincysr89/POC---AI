@@ -892,12 +892,29 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
           ];
           const groupState = (k: TrackKey | 'DOCS') => (k === 'DOCS' ? 'done' : trackInfo(k).state);
           const acts = (name: string) => log.filter(e => e.actor === name || (name === 'Lookup agent' && e.tool === 'container.lookup')).length;
-          const box = 'rounded-[14px] border p-4 sm:p-5 min-w-0';
+          const card = (icon: string, title: string, sub: React.ReactNode, right: React.ReactNode, body: React.ReactNode) => (
+            <div className="bg-white rounded-[16px] border min-w-0 overflow-hidden" style={{ borderColor: '#e1e7f2', boxShadow: '0 2px 10px -6px rgba(14,27,61,.18)' }}>
+              <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b flex-wrap" style={{ borderColor: '#eef1f6', background: 'linear-gradient(180deg,#f7faff,#ffffff)' }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="size-[42px] rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#1360d2,#4f8ff7)', boxShadow: '0 6px 14px -8px rgba(19,96,210,.6)' }}><Icon name={icon} size={19} /></span>
+                  <div className="min-w-0">
+                    <h3 className="text-[19px] text-[#0e1b3d] leading-tight" style={{ fontWeight: 700 }}>{title}</h3>
+                    <p className="text-[14px] text-[#4f5a78] mt-[2px]">{sub}</p>
+                  </div>
+                </div>
+                {right}
+              </div>
+              <div className="p-5 sm:p-6">{body}</div>
+            </div>
+          );
           return (
-            <section className="px-5 sm:px-6 py-5 grid grid-cols-1 gap-5">
-              {/* Shipment details */}
-              <div className={box} style={{ borderColor: '#e3e8f3' }}>
-                <p className="text-[16px] text-[#111838] mb-3" style={{ fontWeight: 700 }}>Shipment details</p>
+            <section className="px-5 sm:px-6 py-6 grid grid-cols-1 gap-5" style={{ background: '#eef2f9' }}>
+              {card('doc', 'Documents uploaded', <>{docsList.length - missingDocs} of {docsList.length} documents on this case · open any of them to see what was read</>,
+                missingDocs > 0 ? <Pill tone="you">{missingDocs} to add</Pill> : <Pill tone="done">All in</Pill>,
+                <CaseDocuments hideTitle source={source} files={files} containers={NC} extra={extra}
+                  onUpload={t => setExtra(x => ({ ...x, [t]: t === 'Commercial invoice' ? 'Invoice_INV-0931.pdf' : 'Packing_list.pdf' }))} />)}
+
+              {card('ship', 'Shipment details', <>BL {ACTIVE.c.bl} · {ACTIVE.c.origin} → Jebel Ali · {HC}</>, null, <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
                   <Field label="Bill of lading" value={ACTIVE.c.bl} />
                   <Field label="Import case" value={ACTIVE.c.caseId} />
@@ -936,23 +953,10 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
                     </table>
                   </div>
                 </div>
-              </div>
+              </>)}
 
-              {/* Documents */}
-              <div className={box} style={{ borderColor: '#e3e8f3' }}>
-                <CaseDocuments source={source} files={files} containers={NC} extra={extra}
-                  onUpload={t => setExtra(x => ({ ...x, [t]: t === 'Commercial invoice' ? 'Invoice_INV-0931.pdf' : 'Packing_list.pdf' }))} />
-              </div>
-
-              {/* AI agents used */}
-              <div className={box} style={{ borderColor: '#e3e8f3' }}>
-                <div className="flex items-end justify-between gap-3 mb-3 flex-wrap">
-                  <div>
-                    <p className="text-[16px] text-[#111838]" style={{ fontWeight: 700 }}>AI agents on this import</p>
-                    <p className="text-[14px] text-[#4f5a78]">{agentsUsed.reduce((a, g) => a + g.agents.length, 0)} agents across the documents and the four tracks. Every action they took is in the audit log.</p>
-                  </div>
-                  <Btn size="sm" variant="secondary" icon="history" onClick={() => goTo('AUDIT')}>View audit log</Btn>
-                </div>
+              {card('bot', 'AI agents', <>{agentsUsed.reduce((a, g) => a + g.agents.length, 0)} agents across the documents and the four tracks · every action is in the audit log</>,
+                <Btn size="sm" variant="secondary" icon="history" onClick={() => goTo('AUDIT')}>View audit log</Btn>,
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                   {agentsUsed.map(g => {
                     const st = groupState(g.k);
@@ -980,8 +984,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
                       </div>
                     );
                   })}
-                </div>
-              </div>
+                </div>)}
             </section>
           );
         })()}
