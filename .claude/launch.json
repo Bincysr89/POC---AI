@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dubai-trade-ai",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "/Users/rogerbincy/dubai-trade-ai",
+      "port": 5194,
+      "autoPort": false
+    }
+  ]
+}
