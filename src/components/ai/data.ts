@@ -162,6 +162,7 @@ export const PILLS: { intent: string; label: string; utter: string; icon: string
   { intent: 'do-containers', label: 'Start import with container numbers', utter: 'Start an import with my container numbers', icon: 'box' },
   { intent: 'case-journey', label: 'My import journey', utter: 'Show my import journey', icon: 'flow', payload: { resume: true } },
   { intent: 'do-approve', label: 'Create delivery order', utter: 'Create a delivery order', icon: 'do' },
+  { intent: 'clearance-create', label: 'Create integrated clearance', utter: 'Create integrated clearance', icon: 'decl' },
   { intent: 'etoken', label: 'Create eToken', utter: 'Create an eToken', icon: 'truck' },
   { intent: 'build-agent', label: 'Build an AI agent', utter: 'Build an AI agent to automate my work', icon: 'bot' },
   { intent: 'do-list', label: 'Recent delivery orders', utter: 'Show my recent delivery orders', icon: 'do' },

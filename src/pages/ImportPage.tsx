@@ -8,14 +8,15 @@ export default function ImportPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const loc = useLocation();
-  const state = loc.state as { files?: string[]; containers?: string[] } | null;
-  const source: ImportSource = params.get('source') === 'containers' ? 'containers' : 'documents';
+  const state = loc.state as { files?: string[]; containers?: string[]; bl?: string } | null;
+  const src = params.get('source');
+  const source: ImportSource = src === 'containers' || src === 'do' || src === 'clearance' ? src : 'documents';
   const startAt = params.get('start') === 'journey' ? 'journey' : undefined;
   const home = () => navigate(`/landing/${agent}`);
   return (
     <div className="min-h-screen" style={{ background: '#f6f8fc' }}>
       <Header onServiceCatalogue={home} />
-      <ImportWizard key={`${source}-${startAt ?? ''}-${loc.key}`} source={source} startAt={startAt} files={state?.files} containers={state?.containers} onExit={home} />
+      <ImportWizard key={`${source}-${startAt ?? ''}-${loc.key}`} source={source} startAt={startAt} files={state?.files} containers={state?.containers} bl={state?.bl} onExit={home} />
     </div>
   );
 }

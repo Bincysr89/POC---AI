@@ -116,6 +116,8 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
 }
 const KEYS: TrackKey[] = ['V', 'D', 'C', 'H'];
 export type CaseSource = 'documents' | 'containers';
+/* Start a journey part-way: e.g. after the DO or the permits were paid from their own page. idx -1 = track already done. */
+export type JourneyStart = { idx?: Partial<Record<TrackKey, number>>; events?: AuditEvent[]; validity?: string; method?: number };
 function seedFor(source: CaseSource, n: number): AuditEvent[] {
   if (source === 'containers') return [
     { time: '24 Nov 09:26', track: 'Documents', actor: 'Status agent', kind: 'agent', action: `Matched ${n} container numbers to BL ${ACTIVE.c.bl}`, tool: 'container.lookup', outcome: 'Done' },
@@ -303,17 +305,21 @@ function StepChecklist({ items, cols }: { items: FlowItem[]; cols?: boolean }) {
 }
 
 /* ── The journey card ───────────────────────────────────────────────── */
-export function CaseJourneyCard({ ask, source = 'documents', files, containers, uploaded, barSlot }: { ask: Ask; source?: CaseSource; files?: string[]; containers?: string[]; uploaded?: Record<string, string>; barSlot?: HTMLElement | null }) {
+export function CaseJourneyCard({ ask, source = 'documents', files, containers, uploaded, barSlot, initial }: { ask: Ask; source?: CaseSource; files?: string[]; containers?: string[]; uploaded?: Record<string, string>; barSlot?: HTMLElement | null; initial?: JourneyStart }) {
   const K = useMemo(() => caseData(source === 'containers' ? containers ?? [] : DEFAULT_CASE_CONTAINERS), []); // eslint-disable-line react-hooks/exhaustive-deps
   const TRACKS = useMemo(() => buildTracks(K), [K]);
   const PERMS = permitsOf(), HSL = ACTIVE.c.hs ?? HS_LINES, PPAY = ACTIVE.c.permitPay ?? PERMIT_PAY;
   const { CONTAINERS, DO_LINES, DO_PAY, PLATES, HC, n: NC } = K;
-  const [idx, setIdx] = useState<Record<TrackKey, number>>({ V: 0, D: 0, C: 0, H: 0 });
-  const [log, setLog] = useState<AuditEvent[]>(() => seedFor(source, K.n));
-  type View = TrackKey | 'OVERVIEW' | 'DOCS';
+  const [idx, setIdx] = useState<Record<TrackKey, number>>(() => {
+    const o = { V: 0, D: 0, C: 0, H: 0, ...initial?.idx };
+    KEYS.forEach(k => { if (o[k] < 0) o[k] = TRACKS[k].steps.length; });
+    return o;
+  });
+  const [log, setLog] = useState<AuditEvent[]>(() => [...seedFor(source, K.n), ...(initial?.events ?? [])]);
+  type View = TrackKey | 'OVERVIEW' | 'DOCS' | 'AUDIT';
   const [sel, setSel] = useState<View>('OVERVIEW');   // which journey page is open
-  const [validity, setValidity] = useState('2027-12-05');
-  const [method, setMethod] = useState(0);
+  const [validity, setValidity] = useState(initial?.validity ?? '2027-12-05');
+  const [method, setMethod] = useState(initial?.method ?? 0);
   const [openPermit, setOpenPermit] = useState<number | null>(null);
   const [slot, setSlot] = useState<SlotPick>(() => slotPicks(K.n).best);
   const announced = useRef(false);
@@ -367,7 +373,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
     const nowDone = Object.fromEntries(KEYS.map(k => [k, idx[k] >= TRACKS[k].steps.length])) as Record<TrackKey, boolean>;
     const justDone = KEYS.filter(k => nowDone[k] && !prevDone.current[k]);
     prevDone.current = nowDone;
-    if (sel === 'OVERVIEW' || sel === 'DOCS' || !justDone.includes(sel)) return;
+    if (sel === 'OVERVIEW' || sel === 'DOCS' || sel === 'AUDIT' || !justDone.includes(sel)) return;
     const remaining = KEYS.filter(k => !nowDone[k]);
     if (!remaining.length) return;                       // all done: the completion message takes over
     const i = KEYS.indexOf(sel);
@@ -719,10 +725,10 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   };
 
   const pageOrder: View[] = ['OVERVIEW', 'DOCS', ...KEYS];
-  const pageName = (v: View) => (v === 'OVERVIEW' ? 'Overview' : v === 'DOCS' ? 'Documents' : META[v].title);
+  const pageName = (v: View) => (v === 'OVERVIEW' ? 'Overview' : v === 'DOCS' ? 'Documents' : v === 'AUDIT' ? 'Audit log' : META[v].title);
   const pi = pageOrder.indexOf(sel);
-  const prevPage = pi > 0 ? pageOrder[pi - 1] : null;
-  const nextPage = pi < pageOrder.length - 1 ? pageOrder[pi + 1] : null;
+  const prevPage: View | null = sel === 'AUDIT' ? 'OVERVIEW' : pi > 0 ? pageOrder[pi - 1] : null;
+  const nextPage: View | null = sel === 'AUDIT' ? null : pi < pageOrder.length - 1 ? pageOrder[pi + 1] : null;
 
   return (
     <div ref={cardRef} className="rounded-[16px] border overflow-clip" style={{ background: '#fff', borderColor: '#dde4f0', boxShadow: '0 8px 28px -16px rgba(14,27,61,.25)' }}>
@@ -735,7 +741,10 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
             <p className="text-[14px] text-[#4f5a78] mt-[2px]">BL {ACTIVE.c.bl} · {vesselShort()} · {ACTIVE.c.origin} → Jebel Ali · {NC} containers</p>
           </div>
           <div className="flex items-center gap-4">
-            {sel !== 'OVERVIEW' && <Btn size="sm" variant="secondary" icon="grid" onClick={() => goTo('OVERVIEW')}>Journey overview</Btn>}
+            <span className="flex items-center gap-2 flex-wrap">
+              {sel !== 'OVERVIEW' && <Btn size="sm" variant="secondary" icon="grid" onClick={() => goTo('OVERVIEW')}>Journey overview</Btn>}
+              <Btn size="sm" variant={sel === 'AUDIT' ? 'primary' : 'secondary'} icon="history" onClick={() => goTo('AUDIT')}>View audit log</Btn>
+            </span>
             <div className="text-right">
               <p className="text-[24px] text-[#0e1b3d] leading-none" style={{ fontWeight: 700 }}>{doneTracks}<span className="text-[15px] text-[#4f5a78]"> of 4</span></p>
               <p className="text-[14px] text-[#4f5a78] mt-1">tracks done</p>
@@ -867,8 +876,13 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
           </section>
         )}
 
+        {/* ── Audit log so far ── */}
+        {sel === 'AUDIT' && (
+          <section className="px-5 sm:px-6 py-5"><AuditTrail events={log} tracksDone={doneTracks} openAll /></section>
+        )}
+
         {/* ── One full-width page per track ── */}
-        {sel !== 'OVERVIEW' && sel !== 'DOCS' && (() => {
+        {sel !== 'OVERVIEW' && sel !== 'DOCS' && sel !== 'AUDIT' && (() => {
           const k = sel;
           const n = KEYS.indexOf(k);
           return (
@@ -915,12 +929,12 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
         <>
           <div className="flex items-center gap-3">
             {prevPage && <Btn size="lg" variant="secondary" onClick={() => goTo(prevPage)}>Back</Btn>}
-            <span className="text-[14px] text-[#4f5a78] hidden md:inline">Page {pi + 1} of {pageOrder.length} · {pageName(sel)}</span>
+            <span className="text-[14px] text-[#4f5a78] hidden md:inline">{sel === 'AUDIT' ? 'Audit log' : `Page ${pi + 1} of ${pageOrder.length} · ${pageName(sel)}`}</span>
           </div>
           <div className="flex items-center gap-3 flex-wrap justify-end">
             {allDone && <Btn size="lg" variant={nextPage ? 'secondary' : 'primary'} icon="doc" onClick={() => ask('audit-log', undefined, { events: log, containers: NC, summary: completion })}>Documents and audit log</Btn>}
             {nextPage && <Btn size="lg" onClick={() => goTo(nextPage)}>Next: {pageName(nextPage)}</Btn>}
-            {!nextPage && !allDone && <Btn size="lg" icon="grid" onClick={() => goTo('OVERVIEW')}>Journey overview</Btn>}
+            {!nextPage && !allDone && sel !== 'AUDIT' && <Btn size="lg" icon="grid" onClick={() => goTo('OVERVIEW')}>Journey overview</Btn>}
           </div>
         </>,
         barSlot,
@@ -931,8 +945,18 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
 
 /* ── Final step: the audit log ───────────────────────────────────────── */
 export function AuditLogCard({ events, containers = 4, summary }: { events: AuditEvent[]; containers?: number; summary?: CompletionSummary }) {
+  return (
+    <div className="grid grid-cols-1 gap-3">
+      {summary ? <ImportComplete summary={summary} /> : <SuccessBanner><strong>Success:</strong> Import <strong>{ACTIVE.c.caseId}</strong> is complete. DO released, declaration cleared and delivery of {containers} containers scheduled with {HAULIER.name}.</SuccessBanner>}
+      <AuditTrail events={events} tracksDone={4} />
+    </div>
+  );
+}
+
+/* The audit trail itself: every action so far, filterable */
+export function AuditTrail({ events, tracksDone, openAll }: { events: AuditEvent[]; tracksDone: number; openAll?: boolean }) {
   const [filter, setFilter] = useState<'all' | 'agents' | 'you' | 'external'>('all');
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(!!openAll);
   const key = (t: string) => { const [dd, m, hm] = t.split(' '); return `${m === 'Dec' ? 12 : 11}-${dd}-${hm}`; };
   const sorted = [...events].sort((a, b) => key(a.time).localeCompare(key(b.time)));
   const rows = sorted.filter(e => filter === 'all' ? true : filter === 'agents' ? e.kind === 'agent' : filter === 'you' ? e.kind === 'you' : e.kind === 'external' || e.kind === 'signal');
@@ -949,8 +973,6 @@ export function AuditLogCard({ events, containers = 4, summary }: { events: Audi
   const trackColor: Record<string, string> = { Documents: '#4f5a78', 'Vessel arrival': '#0f8a8a', 'Trade+ · DO': '#1360d2', 'Integrated Clearance': '#1360d2', CargoWaves: '#b45f06' };
 
   return (
-    <div className="grid grid-cols-1 gap-3">
-      {summary ? <ImportComplete summary={summary} /> : <SuccessBanner><strong>Success:</strong> Import <strong>{ACTIVE.c.caseId}</strong> is complete. DO released, declaration cleared and delivery of {containers} containers scheduled with {HAULIER.name}.</SuccessBanner>}
       <div className="bg-white rounded-[14px] border overflow-hidden" style={{ borderColor: C.border }}>
         <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3 flex-wrap">
           <div>
@@ -960,7 +982,7 @@ export function AuditLogCard({ events, containers = 4, summary }: { events: Audi
           <Btn size="sm" variant="secondary" icon="doc">Download PDF</Btn>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-5">
-          {[['4 of 4', 'tracks complete'], [String(byAgents), 'actions by AI agents'], [String(byYou), 'approvals by you'], [<DhAmount key="p" value={fmt(paid)} />, 'paid in total']].map(([val, l], i) => (
+          {[[`${tracksDone} of 4`, tracksDone === 4 ? 'tracks complete' : 'tracks done so far'], [String(byAgents), 'actions by AI agents'], [String(byYou), 'approvals by you'], [<DhAmount key="p" value={fmt(paid)} />, 'paid in total']].map(([val, l], i) => (
             <div key={i} className="rounded-[10px] px-3 py-2" style={{ background: '#f6f8fc' }}>
               <p className="text-[17px] text-[#0e1b3d]" style={{ fontWeight: 700 }}>{val}</p>
               <p className="text-[14px] text-[#4f5a78]">{l}</p>
@@ -1000,6 +1022,5 @@ export function AuditLogCard({ events, containers = 4, summary }: { events: Audi
         )}
         <p className="px-5 pb-4 text-[14px] text-[#4f5a78] flex items-center gap-2"><Icon name="shield" size={14} className="text-[#1360d2]" /> Agents acted only through governed Dubai Trade APIs. Every payment, submission and booking was approved by you.</p>
       </div>
-    </div>
   );
 }

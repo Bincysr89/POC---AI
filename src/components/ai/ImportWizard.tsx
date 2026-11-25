@@ -10,17 +10,29 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CHECKS, COMPANY, JOURNEY_AGENTS, LOW_CONF_FIELDS, REQUIRED_DOCS, SAMPLE_CONTAINERS, SAMPLE_DOCS,
   SHIPMENT_CONTAINERS, SHIPMENT_FIELDS, SHIPMENT_HS, lookupContainers,
+  ACTIVE, CLEARANCE_DRAFTS, DEFAULT_CASE, DO_DRAFTS, DO_FEE, THC_PER_CONTAINER, WALLET_BALANCE, setActiveCase, sumFees,
 } from './data';
+import { DhAmount } from '../Dh';
 import { caseDocs, DocTile, DocViewer, type CaseDoc } from './docs';
 import { ContainerInput } from './containers';
-import { AuditLogCard, CaseJourneyCard, type AuditEvent } from './journey';
+import { AuditLogCard, CaseJourneyCard, type AuditEvent, type JourneyStart } from './journey';
 import type { CompletionSummary } from './complete';
 import { Btn, C, Field, Icon, Pill, SuccessBanner } from './ui';
 
-export type ImportSource = 'documents' | 'containers';
-type Page = 'upload' | 'reading' | 'docs' | 'details' | 'confirm' | 'containers' | 'lookup' | 'shipment' | 'agents' | 'journey' | 'complete';
+export type ImportSource = 'documents' | 'containers' | 'do' | 'clearance';
+type Page = 'pick' | 'pay' | 'upload' | 'reading' | 'docs' | 'details' | 'confirm' | 'containers' | 'lookup' | 'shipment' | 'agents' | 'journey' | 'complete';
 
 const STEPS: Record<ImportSource, { t: string; pages: Page[] }[]> = {
+  do: [
+    { t: 'Choose a bill of lading', pages: ['pick'] },
+    { t: 'Review and pay', pages: ['pay'] },
+    { t: 'Import journey', pages: ['journey', 'complete'] },
+  ],
+  clearance: [
+    { t: 'Choose a bill of lading', pages: ['pick'] },
+    { t: 'Review and pay permits', pages: ['pay'] },
+    { t: 'Import journey', pages: ['journey', 'complete'] },
+  ],
   documents: [
     { t: 'Upload documents', pages: ['upload', 'reading'] },
     { t: 'Check documents', pages: ['docs'] },
@@ -65,11 +77,19 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
   );
 }
 
-export default function ImportWizard({ source, files: initFiles, containers: initContainers, startAt, onExit }: {
-  source: ImportSource; files?: string[]; containers?: string[]; startAt?: 'journey'; onExit: () => void;
+export default function ImportWizard({ source, files: initFiles, containers: initContainers, startAt, bl, onExit }: {
+  source: ImportSource; files?: string[]; containers?: string[]; startAt?: 'journey'; bl?: string; onExit: () => void;
 }) {
+  const fromDraft = source === 'do' || source === 'clearance';
+  const drafts = source === 'clearance' ? CLEARANCE_DRAFTS : DO_DRAFTS;
+  const [pickIdx, setPickIdx] = useState(() => Math.max(0, drafts.findIndex(x => x.bl === bl)));
+  const [validity, setValidity] = useState('2027-12-05');
+  const [method, setMethod] = useState(0);
+  const [start, setStart] = useState<JourneyStart | undefined>();
+  useState(() => { if (!fromDraft) setActiveCase(DEFAULT_CASE); });   // a new import uses the sample BL
   const [page, setPage] = useState<Page>(() =>
     startAt === 'journey' ? 'journey'
+      : fromDraft ? (bl && drafts.some(x => x.bl === bl) ? 'pay' : 'pick')
       : source === 'documents' ? (initFiles?.length ? 'reading' : 'upload')
       : (initContainers?.length ? 'lookup' : 'containers'));
   const [names, setNames] = useState<string[]>(initFiles?.length ? initFiles : SAMPLE_DOCS.map(d => d.name));
@@ -108,7 +128,7 @@ export default function ImportWizard({ source, files: initFiles, containers: ini
   }, [page]);
 
   const docs = useMemo(() => names.map((n, i) => ({ ...SAMPLE_DOCS[i % SAMPLE_DOCS.length], name: n })), [names]);
-  const caseDocList = caseDocs(source, source === 'documents' ? names : undefined, extra);
+  const caseDocList = caseDocs(source === "documents" ? "documents" : "containers", source === 'documents' ? names : undefined, extra);
   const info = useMemo(() => lookupContainers(list.length ? list : SAMPLE_CONTAINERS.slice(0, 4)), [list]);
   const toConfirm = LOW_CONF_FIELDS.filter(f => !ok[f.id]).length;
   const permits = SHIPMENT_HS.filter(h => h.permit).length;
@@ -120,6 +140,35 @@ export default function ImportWizard({ source, files: initFiles, containers: ini
   const startFiles = (l: string[]) => { setNames(l.length ? l : SAMPLE_DOCS.map(d => d.name)); go('reading'); };
   const confirm = () => { setCreated(true); go('journey'); };
 
+  /* Delivery order / clearance started from a drafted BL */
+  const draft = drafts[pickIdx];
+  const doAmount = (DO_FEE + draft.containers.length * THC_PER_CONTAINER).toLocaleString('en-US', { minimumFractionDigits: 2 });
+  const clr = source === 'clearance' ? CLEARANCE_DRAFTS[pickIdx] : null;
+  const payAmount = clr ? sumFees(clr.permits) : doAmount;
+  const payMethods = [`Dubai Trade wallet · Dh ${WALLET_BALANCE}`, 'Credit facility · 30 days'];
+  const payDraft = () => {
+    const { containers: _c, size: _s, drafted: _d, ...meta } = draft as typeof draft & { goods?: string };
+    setActiveCase(clr ? { ...meta, permits: clr.permits, hs: clr.hs, permitPay: payAmount } : meta);
+    const how = ['wallet', 'credit facility'][method];
+    setStart(clr ? {
+      idx: { C: 3 },
+      events: [
+        { time: '24 Nov 09:36', track: 'Integrated Clearance', actor: 'HS agent', kind: 'agent', action: `Checked ${clr.hs.length} HS codes on BL ${clr.bl}: ${clr.permits.length} need a permit`, tool: 'tariff.lookup', outcome: 'Done' },
+        ...clr.permits.map((p, i) => ({ time: `24 Nov 09:3${8 + i}`, track: 'Integrated Clearance', actor: p.agent, kind: 'agent' as const, action: `Drafted ${p.type.toLowerCase()} request with ${p.entity}`, tool: `${p.entity === 'SIRA' ? 'sira' : 'dm'}.permit.draft`, outcome: 'Draft ready' })),
+        { time: '24 Nov 10:10', track: 'Integrated Clearance', actor: 'You', kind: 'you', action: `Checked the permit request${clr.permits.length > 1 ? 's' : ''} and paid to submit (${how})`, tool: 'tradepay.pay', outcome: `Paid Dh ${payAmount}` },
+      ],
+    } : {
+      idx: { V: -1, D: 2 }, validity, method,
+      events: [
+        { time: '24 Nov 09:50', track: 'Vessel arrival', actor: 'Status agent', kind: 'agent', action: `All ${draft.containers.length} containers on BL ${draft.bl} discharged`, tool: 'container.status', outcome: 'Done' },
+        { time: '24 Nov 09:52', track: 'Trade+ · DO', actor: 'DO agent', kind: 'agent', action: `Drafted the DO request with ${draft.line} charges`, tool: 'do.draft', outcome: 'Draft ready' },
+        { time: '24 Nov 10:02', track: 'Trade+ · DO', actor: 'You', kind: 'you', action: `Reviewed the DO request, set validity to ${validity} and paid (${how})`, tool: 'tradepay.pay', outcome: `Paid Dh ${payAmount}` },
+      ],
+    });
+    setCreated(true);
+    go('journey');
+  };
+
   /* The journey reports completion through ask('audit-log'); here that opens the next page */
   const journeyAsk = (intent: string, _u?: string, payload?: Record<string, unknown>) => {
     if (intent === 'audit-log' && payload) {
@@ -130,6 +179,12 @@ export default function ImportWizard({ source, files: initFiles, containers: ini
 
   /* Page copy */
   const head: Record<Page, { title: string; sub: string }> = {
+    pick: clr || source === 'clearance'
+      ? { title: 'Create integrated clearance', sub: 'Permit agents have drafted the permit requests, and the declaration agent your declaration, for these bills of lading. Choose the one to continue.' }
+      : { title: 'Create a delivery order', sub: 'The DO agent has drafted delivery order requests for these bills of lading. Choose the one you want to request.' },
+    pay: source === 'clearance'
+      ? { title: 'Review and pay the permit requests', sub: 'Check the permits the agents drafted for your goods and pay to submit them. The declaration goes to Dubai Customs once they are approved.' }
+      : { title: 'Review and pay the delivery order', sub: `Check the request, choose how long the DO stays valid and pay. It goes to ${draft.line} straight away.` },
     upload: { title: 'Upload your shipping documents', sub: 'Document AI reads them and prepares your import case. Missing one? You can add it later.' },
     reading: { title: `Reading ${docs.length} document${docs.length > 1 ? 's' : ''}`, sub: 'Document AI is extracting the fields and checking the documents against each other.' },
     docs: { title: 'Check your documents', sub: 'Document AI matched each file to the documents an import needs and cross-checked them.' },
@@ -144,7 +199,9 @@ export default function ImportWizard({ source, files: initFiles, containers: ini
   };
 
   /* Footer actions per page */
-  const nextOf: Partial<Record<Page, { label: string; to: () => void; icon?: string }>> = {
+  const nextOf: Partial<Record<Page, { label: React.ReactNode; to: () => void; icon?: string }>> = {
+    pick: { label: 'Next: Review and pay', to: () => go('pay') },
+    pay: { label: <>{source === 'clearance' ? 'Pay and submit' : 'Pay and send'}&nbsp;<DhAmount value={payAmount} /></>, to: payDraft },
     upload: { label: 'Continue with sample documents', to: () => startFiles([]) },
     docs: { label: 'Next: Shipment details', to: () => go('details') },
     details: { label: 'Next: Confirm fields', to: () => go('confirm') },
@@ -153,7 +210,7 @@ export default function ImportWizard({ source, files: initFiles, containers: ini
     shipment: { label: 'Next: AI agents', to: () => go('agents') },
     agents: { label: 'Confirm and start import journey', to: confirm, icon: 'check' },
   };
-  const backOf: Partial<Record<Page, Page>> = { docs: 'upload', details: 'docs', confirm: 'details', shipment: 'containers', agents: source === 'documents' ? 'confirm' : 'shipment' };
+  const backOf: Partial<Record<Page, Page>> = { pay: 'pick', docs: 'upload', details: 'docs', confirm: 'details', shipment: 'containers', agents: source === 'documents' ? 'confirm' : 'shipment' };
   const next = nextOf[page];
   const back = backOf[page];
 
@@ -167,7 +224,7 @@ export default function ImportWizard({ source, files: initFiles, containers: ini
               <Icon name="chev" size={14} className="rotate-180" />AI home
             </button>
             <span aria-hidden>/</span>
-            <span className={setup ? '' : 'text-[#111838]'} style={{ fontWeight: setup ? 400 : 600 }}>{setup ? (source === 'documents' ? 'Start import from documents' : 'Start import from container numbers') : page === 'complete' ? 'Import journey · documents and audit log' : 'Import journey · IMP-2027-00422'}</span>
+            <span className={setup ? '' : 'text-[#111838]'} style={{ fontWeight: setup ? 400 : 600 }}>{setup ? ({ documents: 'Start import from documents', containers: 'Start import from container numbers', do: 'Create delivery order', clearance: 'Create integrated clearance' } as const)[source] : page === 'complete' ? 'Import journey · documents and audit log' : `Import journey · ${ACTIVE.c.caseId}`}</span>
           </div>
 
           {setup ? (
@@ -203,6 +260,147 @@ export default function ImportWizard({ source, files: initFiles, containers: ini
         )}
 
         <div key={page === 'journey' || page === 'complete' ? 'case' : page} className="ai-page-in grid grid-cols-1 gap-5 min-w-0">
+          {/* ── Choose a drafted bill of lading (delivery order / clearance) ── */}
+          {page === 'pick' && (
+            <div role="radiogroup" aria-label="Bills of lading with drafts ready" className="grid grid-cols-1 gap-3">
+              {drafts.map((x, i) => {
+                const on = i === pickIdx;
+                const c = source === 'clearance' ? CLEARANCE_DRAFTS[i] : null;
+                const amt = c ? sumFees(c.permits) : (DO_FEE + x.containers.length * THC_PER_CONTAINER).toLocaleString('en-US', { minimumFractionDigits: 2 });
+                return (
+                  <button key={x.bl} type="button" role="radio" aria-checked={on} onClick={() => setPickIdx(i)}
+                    className="w-full text-left bg-white rounded-[16px] border-2 px-5 py-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-4 items-center transition-colors"
+                    style={{ borderColor: on ? C.blue : '#e1e7f2', boxShadow: on ? '0 10px 26px -18px rgba(19,96,210,.55)' : '0 1px 2px rgba(14,27,61,.04)' }}>
+                    <span className="flex items-start gap-4 min-w-0">
+                      <span className="size-[22px] rounded-full flex items-center justify-center flex-shrink-0 mt-[3px]" style={{ border: `2px solid ${on ? C.blue : '#b9c4d8'}` }}>
+                        {on && <span className="size-[10px] rounded-full" style={{ background: C.blue }} />}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[17px] text-[#0e1b3d]" style={{ fontWeight: 700, ...mono }}>BL {x.bl}</span>
+                          <Pill tone="done">{c ? `${c.permits.length} permit${c.permits.length > 1 ? 's' : ''} drafted` : 'DO request drafted'}</Pill>
+                        </span>
+                        <span className="block text-[14px] text-[#4f5a78] mt-1">{x.caseId} · {x.line} · {x.vessel.replace(' · ', ' ')} · {x.origin} → Jebel Ali</span>
+                        <span className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-[14px] text-[#111838]">
+                          <span className="inline-flex items-center gap-1"><Icon name="box" size={15} className="text-[#1360d2]" />{x.containers.length} × {x.size}</span>
+                          {c
+                            ? <span className="inline-flex items-center gap-1"><Icon name="decl" size={15} className="text-[#1360d2]" />{c.goods}</span>
+                            : <span className="inline-flex items-center gap-1"><Icon name="ship" size={15} className="text-[#1360d2]" />{(x as typeof DO_DRAFTS[number]).status}</span>}
+                          {c && <span className="inline-flex items-center gap-1"><Icon name="shield" size={15} className="text-[#1360d2]" />{c.permits.map(p => p.entity === 'Dubai Municipality' ? 'DM' : p.entity).join(' · ')}</span>}
+                          <span className="inline-flex items-center gap-1 text-[#4f5a78]"><Icon name="clock" size={15} />Drafted {x.drafted.toLowerCase()}</span>
+                        </span>
+                      </span>
+                    </span>
+                    <span className="lg:text-right pl-[38px] lg:pl-0">
+                      <span className="block text-[14px] text-[#4f5a78]">{c ? 'Permit fees' : 'Delivery order charges'}</span>
+                      <span className="block text-[20px] text-[#0e1b3d]" style={{ fontWeight: 700 }}><DhAmount value={amt} /></span>
+                    </span>
+                  </button>
+                );
+              })}
+              <p className="text-[14px] text-[#4f5a78] flex items-center gap-2"><Icon name="info" size={15} />Only bills of lading with a draft ready are listed. The agents add new ones as {source === 'clearance' ? 'shipping documents are read' : 'containers are discharged'}.</p>
+            </div>
+          )}
+
+          {/* ── Review and pay ── */}
+          {page === 'pay' && (
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px] gap-5 items-start">
+              <div className="grid grid-cols-1 gap-5 min-w-0">
+                <Section title={clr ? `Permit requests drafted for BL ${draft.bl}` : `Delivery order request · BL ${draft.bl}`} sub={`${draft.caseId} · ${draft.vessel.replace(' · ', ' ')} · ${draft.origin} → Jebel Ali`}>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
+                    <Field label="Shipping agent" value={draft.line} />
+                    <Field label="Consignee" value={COMPANY} />
+                    <Field label="Containers" value={`${draft.containers.length} × ${draft.size}`} />
+                    <Field label="Terminal" value="Jebel Ali T3" />
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {draft.containers.map(n => <span key={n} className="inline-flex items-center gap-1 h-[30px] px-3 rounded-full text-[14px] text-[#0e1b3d]" style={{ background: '#eef4ff', fontWeight: 600, ...mono }}><Icon name="box" size={14} />{n}</span>)}
+                  </div>
+                </Section>
+
+                {clr ? (
+                  <>
+                    <Section title={`${clr.permits.length} permit request${clr.permits.length > 1 ? 's' : ''}`} sub="Each permit agent filled the request from your invoice and packing list.">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {clr.permits.map(p => (
+                          <div key={p.ref} className="rounded-[14px] border p-4" style={{ borderColor: '#e3e8f3', background: '#fbfcff' }}>
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="min-w-0">
+                                <span className="block text-[15px] text-[#111838]" style={{ fontWeight: 700 }}>{p.entity}</span>
+                                <span className="block text-[14px] text-[#4f5a78]">{p.type}</span>
+                              </span>
+                              <Pill tone="you">Draft · pay to submit</Pill>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-3">
+                              <Field label="HS code" value={p.hs} />
+                              <Field label="Quantity" value={p.qty} />
+                              <Field label="Goods" value={p.item} />
+                              <Field label="Fee" value={<DhAmount value={p.fee} />} />
+                            </div>
+                            <p className="text-[14px] text-[#4f5a78] mt-3 inline-flex items-center gap-2"><Icon name="bot" size={15} className="text-[#1360d2]" />Prepared by the {p.agent}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </Section>
+                    <Section title={`${clr.hs.length} HS codes on this BL`} sub="The declaration agent drafted your declaration with these lines. It is submitted after the permits are approved.">
+                      <div className="rounded-[12px] border overflow-x-auto" style={{ borderColor: '#eef1f6' }}>
+                        <table className="w-full">
+                          <thead><tr className="bg-[#f3f6fb]"><th className={th}>HS code</th><th className={th}>Goods</th><th className={th}>Permit</th></tr></thead>
+                          <tbody>{clr.hs.map(l => (
+                            <tr key={l.hs} className="border-t" style={{ borderColor: '#eef1f6' }}><td className={td} style={{ fontWeight: 600 }}>{l.hs}</td><td className={td}>{l.d}</td><td className={td}>{l.permit === 'None needed' ? <span className="text-[#4f5a78]">None needed</span> : <Pill tone="run">{l.permit === 'Dubai Municipality' ? 'DM' : l.permit}</Pill>}</td></tr>
+                          ))}</tbody>
+                        </table>
+                      </div>
+                    </Section>
+                  </>
+                ) : (
+                  <Section title="Charges" sub={`Fetched from the ${draft.line} tariff by the DO agent.`}>
+                    <div className="rounded-[12px] border overflow-x-auto" style={{ borderColor: '#eef1f6' }}>
+                      <table className="w-full">
+                        <tbody>
+                          {[
+                            ['Delivery order fee', <DhAmount key="f" value={DO_FEE.toLocaleString('en-US', { minimumFractionDigits: 2 })} />],
+                            [`Terminal handling (${draft.containers.length} × ${THC_PER_CONTAINER.toFixed(2)})`, <DhAmount key="t" value={(draft.containers.length * THC_PER_CONTAINER).toLocaleString('en-US', { minimumFractionDigits: 2 })} />],
+                            ['Container deposit', <span key="d" className="text-[#17703a]" style={{ fontWeight: 600 }}>Waived · guarantee on file</span>],
+                          ].map(([l, v], i) => (
+                            <tr key={i} className={i ? 'border-t' : ''} style={{ borderColor: '#eef1f6' }}><td className={td}>{l}</td><td className={`${td} text-right`}>{v}</td></tr>
+                          ))}
+                          <tr className="border-t" style={{ borderColor: '#dfe5ef', background: '#f6f8fc' }}><td className={td} style={{ fontWeight: 700 }}>Total</td><td className={`${td} text-right`} style={{ fontWeight: 700 }}><DhAmount value={doAmount} /></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </Section>
+                )}
+              </div>
+
+              <div className="lg:sticky lg:top-[104px]">
+                <Section title="What you need to do">
+                  <div className="grid grid-cols-1 gap-4">
+                    {!clr && (
+                      <label className="block">
+                        <span className="block text-[14px] text-[#111838] mb-1" style={{ fontWeight: 600 }}>1. Set the DO validity date</span>
+                        <input type="date" value={validity} onChange={e => setValidity(e.target.value)} className="w-full h-[44px] rounded-[6px] px-3 text-[15px] outline-none bg-white focus:border-[#1360d2]" style={{ border: '1px solid #d5ddfb' }} />
+                        <span className="block text-[14px] text-[#4f5a78] mt-1">Covers free time at the terminal. You can extend it later.</span>
+                      </label>
+                    )}
+                    <label className="block">
+                      <span className="block text-[14px] text-[#111838] mb-1" style={{ fontWeight: 600 }}>{clr ? '1.' : '2.'} Choose how to pay</span>
+                      <select value={method} onChange={e => setMethod(Number(e.target.value))} className="w-full h-[44px] rounded-[6px] px-3 text-[15px] outline-none bg-white focus:border-[#1360d2]" style={{ border: '1px solid #d5ddfb' }}>
+                        {payMethods.map((m, i) => <option key={m} value={i}>{m}</option>)}
+                      </select>
+                    </label>
+                    <div className="rounded-[12px] px-4 py-3 flex items-center justify-between gap-3" style={{ background: '#f6f8fc' }}>
+                      <span className="text-[14px] text-[#4f5a78]">{clr ? 'Permit fees' : 'Total to pay'}</span>
+                      <span className="text-[20px] text-[#0e1b3d]" style={{ fontWeight: 700 }}><DhAmount value={payAmount} /></span>
+                    </div>
+                    <Btn size="lg" onClick={payDraft}>{clr ? 'Pay and submit' : 'Pay and send'}&nbsp;<DhAmount value={payAmount} /></Btn>
+                    <p className="text-[14px] text-[#4f5a78] flex items-start gap-2"><Icon name="shield" size={15} className="mt-[3px] text-[#1360d2]" />{clr ? `Goes to ${clr.permits.map(p => p.entity).join(' and ')} as soon as you pay. Then your import journey continues.` : `Goes to ${draft.line} for release as soon as you pay. Then your import journey continues.`}</p>
+                  </div>
+                </Section>
+              </div>
+            </div>
+          )}
+
           {/* ── Upload documents ── */}
           {page === 'upload' && (
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px] gap-5">
@@ -460,12 +658,22 @@ export default function ImportWizard({ source, files: initFiles, containers: ini
           {(page === 'journey' || page === 'complete') && (
             <>
               {page === 'journey' && created && (
+                fromDraft ? (
+                <SuccessBanner>
+                  {clr
+                    ? <><strong>Success:</strong> {clr.permits.length} permit request{clr.permits.length > 1 ? 's' : ''} for BL <strong>{clr.bl}</strong> {clr.permits.length > 1 ? 'have' : 'has'} been paid (<DhAmount value={payAmount} />) and submitted to {clr.permits.map(p => p.entity).join(' and ')}. Your import journey for <strong>{clr.caseId}</strong> continues below.</>
+                    : <><strong>Success:</strong> Delivery order request for BL <strong>{draft.bl}</strong> has been paid (<DhAmount value={payAmount} />) and sent to {draft.line}. Your import journey for <strong>{draft.caseId}</strong> continues below.</>}
+                </SuccessBanner>
+                ) : (
                 <SuccessBanner>
                   <strong>Success:</strong> Import case <strong>IMP-2027-00422</strong> has been created for BL <strong>MEDU48210937</strong> with {nContainers} containers. {tracksOn} tracks are running with {agentCount} AI agents.{source === 'documents' && toConfirm > 0 && <> {toConfirm} field{toConfirm > 1 ? 's are' : ' is'} still waiting for your confirmation.</>}
                 </SuccessBanner>
+                )
               )}
               <div className={page === 'journey' ? '' : 'hidden'}>
-                <CaseJourneyCard barSlot={barSlot} ask={journeyAsk} source={source} files={source === 'documents' ? names : undefined} containers={source === 'containers' ? info.map(c => c.no) : undefined} uploaded={extra} />
+                {fromDraft
+                  ? <CaseJourneyCard barSlot={barSlot} ask={journeyAsk} source="containers" containers={draft.containers} uploaded={{ 'Commercial invoice': 'Invoice_INV-0931.pdf', 'Packing list': 'Packing_list.pdf' }} initial={start} />
+                  : <CaseJourneyCard barSlot={barSlot} ask={journeyAsk} source={source === 'containers' ? 'containers' : 'documents'} files={source === 'documents' ? names : undefined} containers={source === 'containers' ? info.map(c => c.no) : undefined} uploaded={extra} />}
               </div>
               {page === 'complete' && done && <AuditLogCard events={done.events} containers={done.containers} summary={done.summary} />}
             </>

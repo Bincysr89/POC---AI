@@ -43,6 +43,7 @@ function route(t: string): { intent: string; payload?: Record<string, unknown> }
   if (/risk|storage|free time|demurrage/.test(x)) return { intent: 'risk' };
   if (/(cost|charge|price|how much)/.test(x) && /(\bdo\b|delivery order)/.test(x)) return { intent: 'do-cost' };
   if (/(pay|approve|create|new|raise|request|make)/.test(x) && /(\bdo\b|delivery order)/.test(x)) return { intent: 'do-approve' };
+  if (/(create|start|new|request|raise).{0,24}(integrated clearance|clearance|permits?)/.test(x)) return { intent: 'clearance-create' };
   if (/pending|in review/.test(x) && /declaration/.test(x)) return { intent: 'decl-review' };
   if (/declaration|cleared|clearance/.test(x)) return { intent: 'decl-list' };
   if (/\bdo\b|\bdos\b|delivery order/.test(x)) return { intent: 'do-list' };
@@ -117,7 +118,7 @@ function reply(intent: string, payload?: Record<string, unknown>): Omit<Msg, 'id
       return { agent: 'Support', trace: ['support.availability'], text: "I'll connect you to a Dubai Trade support agent and pass on this conversation, so you won't need to repeat yourself." };
     default:
       return { agent: 'Knowledge base', trace: ['kb.search', 'case.search'], text: "Here's what I can help with across your Dubai Trade account. Try one of these:",
-        follow: PILLS.slice(0, 6).map(p => F(p.label, p.intent, p.utter)) };
+        follow: PILLS.slice(0, 7).map(p => F(p.label, p.intent, p.utter)) };
   }
 }
 
@@ -277,6 +278,8 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
     // Starting an import is a full-page flow, not a chat card
     if (intent === 'upload') { navigate('/landing/trader/import?source=documents', { state: { files: payload?.files } }); return; }
     if (intent === 'do-containers') { navigate('/landing/trader/import?source=containers', { state: { containers: payload?.containers } }); return; }
+    if (intent === 'do-approve') { navigate('/landing/trader/import?source=do', { state: { bl: payload?.bl } }); return; }
+    if (intent === 'clearance-create') { navigate('/landing/trader/import?source=clearance'); return; }
     if (intent === 'case-journey' && payload?.resume) { navigate('/landing/trader/import?source=documents&start=journey'); return; }
     if (pending) return;
     const r = reply(intent, payload);
@@ -299,7 +302,7 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
 
   const inThread = msgs.length > 0 || !!pending;
   const needs = CASES.filter(c => c.status === 'you').length;
-  const pills = PILLS.slice(0, 6);
+  const pills = PILLS.slice(0, 7);
   const act = (intent: string, utter: string, payload?: Record<string, unknown>) => ask(intent, utter, payload);
   const running = myAgents.filter(a => a.on).length;
 
@@ -338,7 +341,7 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
             {/* Waiting for you */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
-                { agent: 'DO agent', title: 'Delivery order ready to approve', meta: <><DhAmount value={DO_TOTAL} /> · IMP-2027-00418</>, go: () => ask('do-approve', 'Review and pay the DO for MEDU48210937') },
+                { agent: 'DO agent', title: 'Delivery order ready to approve', meta: <><DhAmount value={DO_TOTAL} /> · IMP-2027-00418</>, go: () => ask('do-approve', 'Review and pay the DO for MEDU48210937', { bl: 'MEDU48210937' }) },
                 { agent: 'Document AI', title: 'Confirm 2 fields on a new BL', meta: 'IMP-2027-00421', go: () => ask('confirm-fields', 'Confirm the 2 fields on IMP-2027-00421') },
               ].map(a => (
                 <button key={a.title} type="button" onClick={a.go} className="ai-wait group flex items-center gap-3 rounded-[16px] px-4 py-[14px] text-left">
