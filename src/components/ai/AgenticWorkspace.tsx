@@ -542,7 +542,7 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
               <h1 className="text-[34px] sm:text-[48px] text-[#0e1b3d] leading-[1.1] mt-6 text-center" style={{ fontWeight: 500 }}>
                 {greeting}, <span className="ai-name">{USER_NAME}</span>
               </h1>
-              <p className="text-[16px] sm:text-[17px] text-[#4f5a78] mt-3 text-center max-w-[600px]">Ask anything or paste your container numbers. I'll answer, then guide you through each step of your import.</p>
+              <p className="text-[16px] sm:text-[17px] text-[#4f5a78] mt-3 text-center max-w-[600px]">Ask anything or paste your container numbers. I'll answer, then guide you through each step of your process.</p>
 
               <div className="w-full mt-8"><Composer hero autoFocus onSend={sendText} onFiles={sendFiles} onAct={act} /></div>
 
