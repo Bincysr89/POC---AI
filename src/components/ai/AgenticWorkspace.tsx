@@ -6,7 +6,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DhAmount } from '../Dh';
-import { CASES, DEFAULT_MY_AGENTS, DO_DRAFTS, DO_TOTAL, PILLS, USER_NAME, extractContainers, type MyAgent } from './data';
+import { CASES, CHAT_NOS, DEFAULT_CASE, DEFAULT_MY_AGENTS, DO_DRAFTS, DO_TOTAL, PILLS, SAMPLE_BL_NO, USER_NAME, extractContainers, setChatBl, setChatContainer, type MyAgent } from './data';
 import { ContainerDOCard } from './containers';
 import { AgentsContext } from './agents';
 import { AgentsListCard, AutoDoQuestion, JourneyOpenedCard, CHAT_AUDIT, ShipMapCard, ChoiceCards, HistoryCard, JourneyStepper, OptionGrid, BlSummaryCard, BlUploadCard, ChatDOCard, ClearanceStatusCard, ContainerInfoCard, DeliveryDoneCard, DOPickCard, JourneyStartedCard, JourneyStatusCard, NavigatorCard, SlotChatCard } from './chat';
@@ -20,7 +20,7 @@ import { AgentOrb, C, Dot, Icon, Orb, SuccessBanner } from './ui';
 
 type Follow = { label: string; intent: string; utter: string; payload?: Record<string, unknown>; desc?: string; icon?: string };
 /* What a typed reply means while the assistant is waiting on a question */
-type Expect = { yes?: string; no?: string; payload?: Record<string, unknown>; containers?: string };
+type Expect = { yes?: string; no?: string; payload?: Record<string, unknown>; containers?: string; input?: 'journey' | 'etoken' };
 type Msg = {
   id: number;
   who: 'me' | 'ai';
@@ -42,7 +42,8 @@ function route(t: string): { intent: string; payload?: Record<string, unknown> }
   const containers = extractContainers(t);
   if (containers.length) return { intent: 'container-info', payload: { containers } };
   if (/more details|view more|show (me )?more|full details|see more|view details/.test(x)) return { intent: 'more-details' };
-  if (/import journey|my journey|my import case/.test(x)) return { intent: 'journey-status' };
+  if (/import journey|my journey|my import case/.test(x)) return { intent: 'journey-ask' };
+  if (/e-?token/.test(x)) return { intent: 'etoken-ask' };
   if (/upload|new import|start (a|an|the)? ?import|import process|bill of lading|\bbl\b|container numbers?/.test(x)) return { intent: 'start-import' };
   if (/clearance|permit status|declaration status|permits? (approved|status)/.test(x) && !/recent|cleared declarations/.test(x)) return { intent: 'clearance-status' };
   if (/risk|storage|free time|demurrage/.test(x)) return { intent: 'risk' };
@@ -74,7 +75,7 @@ const OPT_DESC: Record<string, string> = {
   etoken: 'Gate pass for your trucks', 'journey-status': 'Where every track stands', 'start-import': 'Upload a BL or enter containers',
   'not-now': "I'll keep watching for you", 'do-draft-chat': 'Review the draft and pay',
 };
-const SAMPLE_NOS = ['MSKU0000001'];
+const SAMPLE_NOS = CHAT_NOS;   // the chat's current container (sample or typed)
 
 function reply(intent: string, payload?: Record<string, unknown>): Omit<Msg, 'id' | 'who'> & { trace: string[] } {
   const files = (payload?.files as string[] | undefined) ?? [];
@@ -99,17 +100,18 @@ function reply(intent: string, payload?: Record<string, unknown>): Omit<Msg, 'id
       return { agent: 'Document AI', trace: ['docai.ready'], text: "Great. Drop your bill of lading below, or use the paperclip in the chat box. I'll read it and pick out every container for you." };
     case 'cv-containers':
       return { agent: 'Status agent', trace: ['container.lookup.ready'], text: "No problem. Type or paste your container numbers in the chat box below, one or many, and I'll track down the bill of lading and vessel with the shipping line.",
-        follow: [F('Use the sample container', 'cv-bl', 'MSKU0000001', { containers: SAMPLE_NOS })], expect: { containers: 'cv-bl' } };
+        follow: [F('Use the sample container', 'cv-bl', 'MSKU0000001', { containers: ['MSKU0000001'] })], expect: { containers: 'cv-bl' } };
     case 'cv-bl': {
       const nos = (payload?.containers as string[] | undefined) ?? SAMPLE_NOS;
       const fromBl = !payload?.containers;
       return { agent: fromBl ? 'Document AI' : 'Status agent', trace: fromBl ? ['docai.read · bill of lading', 'bl.containers', 'party.validate'] : ['container.lookup', 'bl.match', 'line.documents'],
-        text: fromBl ? "Thanks, got it. Your bill of lading is BL MEDU48210937, with 1 container on MV Sample Voyager 027E, and you're listed as the consignee." : `Good news: I found your container on bill of lading BL MEDU48210937 and fetched it from Mediterranean Shipping for you.`,
+        text: payload?.bl ? `Found it. Bill of lading BL ${DEFAULT_CASE.bl} has 1 container on MV Sample Voyager 027E, and you're listed as the consignee.`
+          : fromBl ? `Thanks, got it. Your bill of lading is BL ${DEFAULT_CASE.bl}, with 1 container on MV Sample Voyager 027E, and you're listed as the consignee.` : `Good news: I found your container on bill of lading BL ${DEFAULT_CASE.bl} and fetched it from Mediterranean Shipping for you.`,
         expect: { yes: 'cv-start', no: 'not-now', payload: { containers: nos } } };
     }
     case 'cv-start': {
       const nos = (payload?.containers as string[] | undefined) ?? SAMPLE_NOS;
-      return { agent: 'Import assistant', trace: ['case.create · IMP-2027-00422', 'vessel.status · marine traffic'], text: "Your import case is open. Here's your case number.",
+      return { agent: 'Status agent', trace: ['vessel.status · marine traffic'], text: "I've checked the vessel information for you. MV Sample Voyager 027E is running late: it's now expected at Jebel Ali on 30 Nov at 14:30 instead of 06:00.",
         expect: { yes: 'do-draft-chat', no: 'not-now', payload: { containers: nos } } };
     }
     case 'cv-map':
@@ -120,7 +122,7 @@ function reply(intent: string, payload?: Record<string, unknown>): Omit<Msg, 'id
       return { agent: 'Import assistant', trace: ['agents.list · IMP-2027-00422'], text: "These are the agents on your import. They take one step at a time, and I'll check with you before anything is paid or sent. Where would you like to go next?",
         follow: [F('See the vessel details', 'container-info', 'Show me the vessel details', { containers: SAMPLE_NOS, inJourney: true }), F('Request the delivery order', 'do-draft-chat', 'Request the delivery order', { containers: SAMPLE_NOS }, "I'll draft it now; you review and pay")] };
     case 'cv-audit':
-      return { agent: 'Import assistant', trace: ['audit.compile · IMP-2027-00422'], text: "Here's everything that happened on IMP-2027-00422: who did each step, the system they used and the outcome.",
+      return { agent: 'Import assistant', trace: ['audit.compile · IMP-2027-00422'], text: "Here's everything that happened on your import: who did each step, the system they used and the outcome.",
         follow: [F('I need other help', 'cv-help', 'I need some other help')] };
     case 'cv-help':
       return { agent: 'Import assistant', trace: ['Listening'], text: 'Of course. What else can I help you with? Pick one below or just type your question.',
@@ -132,7 +134,17 @@ function reply(intent: string, payload?: Record<string, unknown>): Omit<Msg, 'id
         follow: [F('Delivery order', 'cv-do-pick', 'Create a delivery order'), F('Integrated Clearance status', 'clearance-status', 'What is the status of my integrated clearance?'), F('Create eToken', 'cv-slots', 'Create an eToken'), F('My import journey', 'journey-status', 'Show my import journey'), F('Start an import', 'start-import', 'Start the import process')] };
     case 'cv-do-pick':
       return { agent: 'DO agent', trace: ['do.drafts · ready to request'], text: "I've already drafted delivery order requests for these bills of lading. Which one would you like to go ahead with?" };
+    case 'journey-ask':
+      return { agent: 'Workflow manager', trace: ['journey.lookup.ready'], text: "Sure. Which import would you like to follow? Type the container number or the bill of lading number, and I'll pick up your journey from there.",
+        follow: [F('Use the sample container', 'cv-bl', 'MSKU0000001', { containers: ['MSKU0000001'] }), F('Use the sample BL', 'cv-bl', SAMPLE_BL_NO, { bl: SAMPLE_BL_NO })],
+        expect: { input: 'journey' } };
+    case 'etoken-ask':
+      return { agent: 'CargoWaves agent', trace: ['etoken.lookup.ready'], text: "Happy to. Which shipment is the eToken for? Type the declaration number or the container number, and I'll find a delivery slot for you.",
+        follow: [F('Use the sample declaration', 'cv-slots', '101-27-0049310', { decl: '101-27-0049310' }), F('Use the sample container', 'cv-slots', 'MSKU0000001', { containers: ['MSKU0000001'] })],
+        expect: { input: 'etoken' } };
     case 'cv-slots':
+      if (payload?.decl || payload?.containers) return { agent: 'CargoWaves agent', trace: [payload?.decl ? `declaration.lookup · ${payload.decl as string}` : 'container.lookup', 'customs.status · cleared', 'haulier.contract · Al Bahar Transport', 'gate.forecast'],
+        text: `${payload?.decl ? `Declaration ${payload.decl as string} is cleared` : `Container ${CHAT_NOS[0]} is cleared by customs`}, so it's ready for pickup. Pick a slot with Al Bahar Transport, your contracted haulier, and I'll send the order and create the eToken.` };
       return { agent: 'CargoWaves agent', trace: ['haulier.contract · Al Bahar Transport', 'gate.forecast'], text: "Almost there. Pick a slot with Al Bahar Transport, your contracted haulier, and I'll send the order and create the eToken." };
     case 'cv-booked':
       return { agent: 'CargoWaves agent', trace: ['cargowaves.order.send', 'haulier.accept', 'etoken.issue · DP World'], text: `That's everything, ${USER_NAME}. Your import journey is on track, and I'll keep an eye on the delivery and let you know when the truck leaves the port.` };
@@ -142,7 +154,7 @@ function reply(intent: string, payload?: Record<string, unknown>): Omit<Msg, 'id
         expect: { yes: 'do-draft-chat', no: 'not-now', payload: { containers: SAMPLE_NOS } } };
     case 'container-info': {
       const n = ((payload?.containers as string[] | undefined) ?? []).length;
-      return { agent: 'Status agent', trace: ['container.lookup', 'bl.match', 'marinetraffic.ais'], text: `${n > 1 ? `Your ${n} containers are` : 'Your container is'} on BL MEDU48210937, on board MV Sample Voyager 027E. Here's the vessel and arrival information. The ship is running late, so I've included its live position.`,
+      return { agent: 'Status agent', trace: ['container.lookup', 'bl.match', 'marinetraffic.ais'], text: `${n > 1 ? `Your ${n} containers are` : 'Your container is'} on BL ${DEFAULT_CASE.bl}, on board MV Sample Voyager 027E. Here's the vessel and arrival information. The ship is running late, so I've included its live position.`,
         expect: { yes: 'do-draft-chat', no: 'not-now', payload: { containers: payload?.containers } } };
     }
     case 'do-draft-chat':
@@ -255,16 +267,16 @@ function Card({ m, ask, go }: { m: Msg; ask: Ask; go: (to: string) => void }) {
     ]} />;
     case 'cv-upload': return <BlUploadCard ask={ask} />;
     case 'cv-history': return <HistoryCard ask={ask} cases={CASES} />;
-    case 'cv-bl': return <BlSummaryCard ask={ask} source={m.payload?.containers ? 'containers' : 'documents'} file={(m.payload?.files as string[] | undefined)?.[0]} containers={m.payload?.containers as string[] | undefined} full={!!m.payload?.full} more={!!m.payload?.more} />;
+    case 'cv-bl': return <BlSummaryCard ask={ask} source={m.payload?.containers || m.payload?.bl ? 'containers' : 'documents'} file={(m.payload?.files as string[] | undefined)?.[0]} containers={m.payload?.containers as string[] | undefined} full={!!m.payload?.full} more={!!m.payload?.more} />;
     case 'cv-start': return <JourneyOpenedCard ask={ask} containers={(m.payload?.containers as string[] | undefined) ?? SAMPLE_NOS} />;
     case 'cv-map': return <ShipMapCard />;
-    case 'cv-audit': return <AuditTrail events={CHAT_AUDIT} tracksDone={4} openAll />;
+    case 'cv-audit': return <AuditTrail events={CHAT_AUDIT} tracksDone={4} openAll title={`Audit log · BL ${DEFAULT_CASE.bl}`} />;
     case 'cv-agents': return <AgentsListCard />;
     case 'do-sent': return <AutoDoQuestion ask={ask} />;
     case 'cv-autodo': return <>{m.payload?.on ? <SuccessBanner><strong>Success:</strong> Automatic delivery orders are on for your next imports. You can switch this off anytime.</SuccessBanner> : null}<JourneyStepper stage={2} /></>;
     case 'cv-do-pick': return <DOPickCard ask={ask} drafts={DO_DRAFTS} />;
     case 'cv-slots': return <SlotChatCard ask={ask} full={!!m.payload?.full} />;
-    case 'cv-booked': return <><DeliveryDoneCard ask={ask} slot={(m.payload?.slot as string) ?? 'Wed 1 Dec · 08:00–10:00'} /></>;
+    case 'cv-booked': return <><DeliveryDoneCard ask={ask} slot={(m.payload?.slot as string) ?? 'Wed 1 Dec · 08:00–10:00'} truck={m.payload?.truck as string | undefined} /></>;
     case 'journey-status': return <><JourneyStepper stage={1} /><JourneyStatusCard open={() => go(FULL_VIEW)} /></>;
     case 'container-info': return <>{m.payload?.inJourney && !m.payload?.more ? <JourneyStepper stage={0} /> : null}<ContainerInfoCard ask={ask} containers={(m.payload?.containers as string[] | undefined) ?? []} full={!!m.payload?.full} more={!!m.payload?.more} /></>;
     case 'do-draft-chat': return <>{m.payload?.more ? null : <JourneyStepper stage={1} />}<ChatDOCard full={!!m.payload?.full} ask={ask} containers={(m.payload?.containers as string[] | undefined) ?? []} bl={m.payload?.bl as string | undefined} line={m.payload?.line as string | undefined} /></>;
@@ -454,6 +466,9 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
   const navigate = useNavigate();
   const ask: Ask = (intent, utter, payload) => {
     if (pending) return;
+    // Finding the BL starts the import: remember which container it's for (the sample for a BL upload)
+    if (intent === 'cv-bl') { setChatContainer(((payload?.containers as string[] | undefined) ?? [])[0] ?? 'MSKU0000001'); setChatBl((payload?.bl as string | undefined) ?? SAMPLE_BL_NO); }
+    if (intent === 'cv-slots' && payload?.containers) setChatContainer((payload.containers as string[])[0]);
     const r = reply(intent, payload);
     const user: Msg | null = utter ? { id: idRef.current++, who: 'me', text: utter, attachments: payload?.files as string[] | undefined } : null;
     if (user) setMsgs(m => [...m, user]);
@@ -472,6 +487,23 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
   };
 
   const sendText = (t: string) => {
+    const want = expectRef.current?.input;
+    const cont = t.trim().match(/^(msk[a-z0-9-]*)/i)?.[1]?.replace(/-/g, '').toUpperCase() ?? extractContainers(t)[0];
+    // "My import journey": a container number or a bill of lading number continues the import flow
+    if (want === 'journey') {
+      if (cont) { ask('cv-bl', t, { containers: [cont], typed: true }); return; }
+      const bl = t.trim().match(/\b(?:BL[\s-]*)?([A-Z]{4}\d{6,10})\b/i)?.[1]?.toUpperCase();
+      if (bl) { ask('cv-bl', t, { bl, typed: true }); return; }
+    }
+    // "Create eToken": a declaration number or a container number goes straight to choosing a slot
+    if (want === 'etoken') {
+      const decl = t.match(/\b(\d{3}-\d{2}-\d{5,8})\b/)?.[1] ?? t.match(/\b(\d{9,13})\b/)?.[1];
+      if (decl) { ask('cv-slots', t, { decl, typed: true }); return; }
+      if (cont) { ask('cv-slots', t, { containers: [cont], typed: true }); return; }
+    }
+    // Anything starting with MSK is a container number: run the same import flow as the sample container
+    const msk = t.trim().match(/^(msk[a-z0-9-]*)/i);
+    if (msk) { ask('cv-bl', t, { containers: [msk[1].replace(/-/g, '').toUpperCase()], typed: true }); return; }
     const ex = expectRef.current;
     const nos = extractContainers(t);
     if (ex?.containers && nos.length) { ask(ex.containers, t, { containers: nos, typed: true }); return; }
@@ -483,7 +515,7 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
   };
   askRef.current = ask;
   const sendFiles = (names: string[]) => ask('cv-bl', `Uploaded ${names[0]}`, { files: names.slice(0, 1) });
-  const reset = () => { timers.current.forEach(clearTimeout); timers.current = []; setPending(null); setMsgs([]); };
+  const reset = () => { timers.current.forEach(clearTimeout); timers.current = []; setPending(null); setMsgs([]); setChatContainer('MSKU0000001'); setChatBl(SAMPLE_BL_NO); };
 
   const inThread = msgs.length > 0 || !!pending;
   const needs = CASES.filter(c => c.status === 'you').length;

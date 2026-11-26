@@ -153,7 +153,7 @@ export function ImportComplete({ summary, brief, tracks, onTracked }: { summary:
           <DoneMark />
           <p className="ai-rise text-[22px] text-[#0e1b3d] mt-4" style={{ fontWeight: 700, animationDelay: '.35s' }}>Your import journey is on track</p>
           <p className="ai-rise text-[15px] text-[#40484f] mt-1 max-w-[620px]" style={{ animationDelay: '.5s' }}>
-            DO released, permits approved, customs cleared and eToken issued for {ACTIVE.c.caseId}. We'll keep tracking your delivery until the containers reach your warehouse.
+            DO released, permits approved, customs cleared and eToken issued for {brief ? `BL ${ACTIVE.c.bl}` : ACTIVE.c.caseId}. We'll keep tracking your delivery until the containers reach your warehouse.
           </p>
           {tracks ? <div className="ai-rise w-full max-w-[760px] mt-5" style={{ animationDelay: '.65s' }}>{tracks}</div> : <div className="ai-rise flex flex-wrap justify-center gap-2 mt-4" style={{ animationDelay: '.65s' }}>
             {['Vessel Operations', 'Trade+', 'Integrated Clearance', 'Cargo Waves'].map(t => (

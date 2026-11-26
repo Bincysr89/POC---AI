@@ -159,10 +159,10 @@ export const RECENT_CHATS = [
 /* Suggested prompts shown as pills on the AI home */
 export const PILLS: { intent: string; label: string; utter: string; icon: string; payload?: Record<string, unknown> }[] = [
   { intent: 'start-import', label: 'Start import process', utter: 'Start the import process', icon: 'upload' },
-  { intent: 'journey-status', label: 'My import journey', utter: 'Show my import journey', icon: 'flow' },
+  { intent: 'journey-ask', label: 'My import journey', utter: 'Show my import journey', icon: 'flow' },
   { intent: 'cv-do-pick', label: 'Create delivery order', utter: 'Create a delivery order', icon: 'do' },
   { intent: 'clearance-status', label: 'Check clearance status', utter: 'What is the status of my integrated clearance?', icon: 'decl' },
-  { intent: 'cv-slots', label: 'Create eToken', utter: 'Create an eToken', icon: 'truck' },
+  { intent: 'etoken-ask', label: 'Create eToken', utter: 'Create an eToken', icon: 'truck' },
   { intent: 'do-list', label: 'Recent delivery orders', utter: 'Show my recent delivery orders', icon: 'do' },
   { intent: 'decl-list', label: 'Recent cleared declarations', utter: 'Show my recent cleared declarations', icon: 'decl' },
   { intent: 'track', label: 'Track MEDU48210937', utter: 'Track MEDU48210937', icon: 'track' },
@@ -173,6 +173,12 @@ export const PILLS: { intent: string; label: string; utter: string; icon: string
 
 /* ── Container numbers → delivery orders ─────────────────────────────── */
 export const SAMPLE_CONTAINERS = ['MSKU0000001', 'MSKU0000002', 'HLXU8812045', 'HLXU8812046', 'TGHU5521890'];
+
+/* The container the chat import is about. Starts as the sample; whatever the
+ * user types (e.g. anything starting with MSK) takes its place, and every chat
+ * card reads it from here so the typed number shows all the way through. */
+export const CHAT_NOS: string[] = ['MSKU0000001'];
+export function setChatContainer(no: string) { CHAT_NOS[0] = no; }
 
 export function extractContainers(t: string): string[] {
   return Array.from(new Set(t.toUpperCase().match(/\b[A-Z]{4}\d{7}\b/g) ?? []));
@@ -299,3 +305,17 @@ export const sumFees = (p: Permit[]) => p.reduce((a, x) => a + Number(x.fee.repl
 
 /* Vessel arrival: the line said 06:00; marine traffic (AIS) showed the ship running late */
 export const VESSEL = { eta: '30 Nov 06:00', revised: '30 Nov 14:30', ataTime: '14:40', late: '8 h 40 min', found: '29 Nov 18:20' };
+
+/* A bill of lading the user typed in the chat: the sample shipment takes that BL number */
+export function setChatBl(bl: string) {
+  DEFAULT_CASE.bl = bl; BL_POOL[0].bl = bl;
+  if (DO_DRAFTS[0]) DO_DRAFTS[0].bl = bl;
+}
+export const SAMPLE_BL_NO = 'MEDU48210937';
+
+/* Haulier truck the CargoWaves agent suggests for the eToken, picked from the haulier's past trips */
+export const SUGGESTED_TRUCK = { plate: 'Dubai F 48213', type: "40' flatbed trailer", fits: "Fits a 40' high-cube container", driver: 'Imran Khan', trips: 14, last: '18 Nov · Jebel Ali T3' };
+export const OTHER_TRUCKS = [
+  { plate: 'Dubai K 20977', type: "40' flatbed trailer", driver: 'Suresh Nair', trips: 9, last: '12 Nov · Jebel Ali T2' },
+  { plate: 'Dubai M 66104', type: "40' skeletal trailer", driver: 'Bilal Ahmed', trips: 6, last: '3 Nov · Jebel Ali T3' },
+];

@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DhAmount } from '../Dh';
-import { CF_AGENT, COMPANY, DEFAULT_CASE, DO_FEE, THC_PER_CONTAINER, VESSEL, WALLET_BALANCE, lookupContainers } from './data';
+import { CF_AGENT, CHAT_NOS, COMPANY, OTHER_TRUCKS, SUGGESTED_TRUCK, DEFAULT_CASE, DO_FEE, THC_PER_CONTAINER, VESSEL, WALLET_BALANCE, lookupContainers } from './data';
 import type { Ask } from './flows';
 import { VesselMap } from './vesselmap';
 import { SlotPicker, slotPicks, slotText, type AuditEvent, type SlotPick } from './journey';
@@ -104,7 +104,7 @@ function Mini({ icon, title, sub, pill, tone }: { icon: string; title: string; s
     </div>
   );
 }
-const ONE = ['MSKU0000001'];
+const ONE = CHAT_NOS;   // the chat's current container (sample or typed)
 
 /* A small cargo ship, drawn in white */
 function ShipGlyph({ size = 18 }: { size?: number }) {
@@ -373,7 +373,7 @@ export function NavigatorCard({ items }: { items: { icon: string; title: string;
 
 /* ── Conversational import flow ─────────────────────────────────────────── */
 const SAMPLE_BL = 'BL_MEDU48210937.pdf';
-const SAMPLE_NOS = ['MSKU0000001'];
+const SAMPLE_NOS = CHAT_NOS;
 export const CHAT_SLOTS = [
   { k: 'earliest', label: 'Earliest available', when: 'Wed 1 Dec · 08:00–10:00', note: 'Medium gate queue · 4 trucks ready' },
   { k: 'lowest', label: 'Lowest gate queue', when: 'Wed 1 Dec · 18:00–20:00', note: 'Short queue · fastest gate-out' },
@@ -439,9 +439,9 @@ export function BlSummaryCard({ ask, source, file, containers, full, more }: { a
       </div>
       {!more && (
         <div>
-          <AgentSays text={`Everything looks in order. Shall I open the import case? I'll take you through it one step at a time, starting with the vessel.`}>
+          <AgentSays text={`Everything looks in order. Shall I start your import? I'll take you through it one step at a time, starting with the vessel.`}>
             <OptionGrid options={[
-            { label: 'Yes, start the journey', desc: 'Open the case and let the agents begin', icon: 'flow', onPick: () => go(true) },
+            { label: 'Yes, start the journey', desc: 'The agents begin, starting with the vessel', icon: 'flow', onPick: () => go(true) },
             { label: 'Not now', desc: 'Keep the BL; start later', icon: 'clock', tone: 'quiet', onPick: () => go(false) },
           ]} />
           </AgentSays>
@@ -491,13 +491,23 @@ export function SlotChatCard({ ask, full }: { ask: Ask; full?: boolean }) {
   const [done, setDone] = useState(false);
   const [open, setOpen] = useState(!!full);
   const same = (a: SlotPick, b: SlotPick) => a.d === b.d && a.t === b.t;
-  const create = () => { setDone(true); ask('cv-booked', `Create the eToken for ${slotText(slot)}`, { slot: slotText(slot) }); };
+  const [truck, setTruck] = useState(SUGGESTED_TRUCK.plate);
+  const [truckOk, setTruckOk] = useState(false);
+  const [pickTruck, setPickTruck] = useState(false);
+  const [slotOk, setSlotOk] = useState(false);   // slot first, then the truck, then the eToken
+  const create = () => { setDone(true); ask('cv-booked', `Create the eToken for ${slotText(slot)} with truck ${truck}`, { slot: slotText(slot), truck }); };
   return (
     <div className="grid grid-cols-1 gap-3">
       <div className={card} style={cardStyle}>
-        <Mini icon="truck" title="Create eToken" sub="Cargo Waves · pick a delivery slot with Al Bahar Transport LLC" pill={done ? 'eToken requested' : 'Needs you'} tone={done ? 'done' : 'you'} />
+        <Mini icon="truck" title="Create eToken" sub="Cargo Waves · pick a delivery slot with Al Bahar Transport LLC" pill={done ? 'eToken requested' : slotOk ? 'Slot confirmed' : 'Needs you'} tone={done || slotOk ? 'done' : 'you'} />
         <div className="px-4 pb-4 pt-3 grid grid-cols-1 gap-3">
-          {done ? <SuccessBanner><strong>Success:</strong> Slot <strong>{slotText(slot)}</strong> sent to Al Bahar Transport and the eToken requested from DP World.</SuccessBanner> : (
+          {done ? <SuccessBanner><strong>Success:</strong> Slot <strong>{slotText(slot)}</strong> sent to Al Bahar Transport and the eToken requested from DP World.</SuccessBanner>
+          : slotOk ? (
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="flex-1 min-w-[220px]"><SuccessBanner><strong>Slot confirmed:</strong> <strong>{slotText(slot)}</strong> with Al Bahar Transport.</SuccessBanner></span>
+              {!truckOk && <Btn size="sm" variant="secondary" icon="clock" onClick={() => setSlotOk(false)}>Change slot</Btn>}
+            </div>
+          ) : (
             <>
               {!open && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -513,28 +523,83 @@ export function SlotChatCard({ ask, full }: { ask: Ask; full?: boolean }) {
               {open && <div className="ai-reveal"><SlotPicker value={slot} onChange={setSlot} need={1} /></div>}
               <div className="flex items-center gap-3 flex-wrap">
                 <Btn variant="secondary" icon={open ? 'chevDown' : 'grid'} className={open ? '[&>svg]:rotate-180' : ''} onClick={() => setOpen(o => !o)}>{open ? 'Show fewer slots' : 'View more slots'}</Btn>
-                <span className="text-[14px] text-[#4f5a78]">Selected: <strong className="text-[#111838]" style={{ fontWeight: 700 }}>{slotText(slot)}</strong></span>
+                <span className="text-[14px] text-[#4f5a78] flex-1 min-w-[180px]">Selected: <strong className="text-[#111838]" style={{ fontWeight: 700 }}>{slotText(slot)}</strong></span>
+                <Btn icon="check" onClick={() => setSlotOk(true)}>Confirm slot</Btn>
               </div>
             </>
           )}
         </div>
       </div>
-      <div>
-        <AgentSays text={`Would you like me to create the eToken with these details? I'll send the order to Al Bahar Transport for your chosen slot and ask DP World for the eToken.`}>
-          <OptionGrid options={[
-            { label: 'Create eToken', desc: `For ${slotText(slot)} · Al Bahar Transport`, icon: 'truck', tone: 'primary', onPick: create },
-            { label: 'Not now', icon: 'clock', onPick: () => ask('not-now', 'Not now') },
-          ]} />
+      {/* The truck: its own card, asked about once the slot is confirmed */}
+      {slotOk && <div className="ai-reveal">
+        <AgentSays text={`I've also picked a truck for you. Your container is a 40' high cube, so I chose one that fits it from Al Bahar Transport's past trips with you.`}>
+          <div className="grid grid-cols-1 gap-4">
+            {(() => {
+              const t = truck === SUGGESTED_TRUCK.plate ? SUGGESTED_TRUCK : OTHER_TRUCKS.find(o => o.plate === truck)!;
+              const facts: [string, string, string][] = [['truck', 'Truck', t.plate], ['box', 'Trailer', t.type], ['person', 'Driver', t.driver], ['history', 'Past trips with you', `${t.trips} trips · last ${t.last}`]];
+              return (
+                <div className={card} style={cardStyle}>
+                  <Mini icon="truck" title="Truck for pickup" sub="AI suggestion · Al Bahar Transport LLC" pill={truckOk ? 'Confirmed' : 'Suggested'} tone={truckOk ? 'done' : 'run'} />
+                  <div className="px-4 pb-4 pt-3 grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      {facts.map(([icon, label, value]) => (
+                        <div key={label} className="flex items-start gap-3 rounded-[12px] px-3 py-3 min-w-0" style={{ background: '#f6f9ff', border: '1px solid #e3ebf8' }}>
+                          <span className="size-[36px] rounded-full flex items-center justify-center flex-shrink-0 text-[#1360d2]" style={{ background: '#e6efff' }}><Icon name={icon} size={17} /></span>
+                          <span className="min-w-0">
+                            <span className="block text-[14px] text-[#4f5a78]">{label}</span>
+                            <span className="block text-[15px] text-[#111838] leading-snug" style={{ fontWeight: 700 }}>{value}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[14px] text-[#17703a] flex items-center gap-2" style={{ fontWeight: 600 }}><Icon name="check" size={15} strokeWidth={2.6} />Fits a 40' high-cube container</p>
+                    {truckOk ? (
+                      <SuccessBanner><strong>Success:</strong> Truck <strong>{truck}</strong> is confirmed for pickup.</SuccessBanner>
+                    ) : pickTruck ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {[SUGGESTED_TRUCK, ...OTHER_TRUCKS].map(o => (
+                          <button key={o.plate} type="button" onClick={() => { setTruck(o.plate); setPickTruck(false); setTruckOk(true); }}
+                            className="text-left rounded-[12px] px-3 py-3 border bg-white transition-colors hover:border-[#1360d2] flex items-start gap-3" style={{ borderColor: truck === o.plate ? C.blue : '#e3e8f3' }}>
+                            <span className="size-[32px] rounded-full flex items-center justify-center flex-shrink-0 text-[#1360d2]" style={{ background: '#e6efff' }}><Icon name="truck" size={15} /></span>
+                            <span className="min-w-0">
+                              <span className="block text-[15px] text-[#111838]" style={{ fontWeight: 700 }}>{o.plate}</span>
+                              <span className="block text-[14px] text-[#4f5a78]">{o.type} · {o.driver}</span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : !done && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Btn icon="check" onClick={() => setTruckOk(true)}>Confirm this truck</Btn>
+                        <Btn variant="secondary" icon="truck" onClick={() => setPickTruck(true)}>Choose another truck</Btn>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+            {/* the eToken question comes once the truck is confirmed */}
+            {truckOk && (
+              <div className="ai-reveal">
+                <AgentSays text={`Would you like me to create the eToken with these details? I'll send the order to Al Bahar Transport for your chosen slot and truck, and ask DP World for the eToken.`}>
+                  <OptionGrid options={[
+                    { label: 'Create eToken', desc: `For ${slotText(slot)} · truck ${truck}`, icon: 'truck', tone: 'primary', onPick: create },
+                    { label: 'Not now', icon: 'clock', onPick: () => ask('not-now', 'Not now') },
+                  ]} />
+                </AgentSays>
+              </div>
+            )}
+          </div>
         </AgentSays>
-      </div>
+      </div>}
     </div>
   );
 }
 
 /* Delivery booked: the celebration, the truck on its way and the QR code; then what's next */
-export function DeliveryDoneCard({ ask, slot }: { ask: Ask; slot: string; open?: () => void; full?: boolean }) {
+export function DeliveryDoneCard({ ask, slot, truck }: { ask: Ask; slot: string; truck?: string; open?: () => void; full?: boolean }) {
   const summary: CompletionSummary = {
-    containers: ONE, plates: ['Dubai F 48213'],
+    containers: ONE, plates: [truck ?? SUGGESTED_TRUCK.plate],
     slot, doPaid: money(DO_FEE + THC_PER_CONTAINER), declNo: '101-27-0049310',
     docs: caseDocs('documents', [SAMPLE_BL], {}),
     permits: [
@@ -563,8 +628,8 @@ export function DeliveryDoneCard({ ask, slot }: { ask: Ask; slot: string; open?:
 
 /* The audit log for the chat journey */
 export const CHAT_AUDIT: AuditEvent[] = [
-  { time: '24 Nov 09:20', track: 'Documents', actor: 'Document AI', kind: 'agent', action: 'Read BL MEDU48210937 and container MSKU0000001', tool: 'docai.read', outcome: 'Done' },
-  { time: '24 Nov 09:22', track: 'Documents', actor: 'You', kind: 'you', action: 'Opened import case IMP-2027-00422', tool: 'case.create', outcome: 'Approved' },
+  { time: '24 Nov 09:20', track: 'Documents', actor: 'Document AI', kind: 'agent', get action() { return `Read BL ${DEFAULT_CASE.bl} and container ${CHAT_NOS[0]}`; }, tool: 'docai.read', outcome: 'Done' },
+  { time: '24 Nov 09:22', track: 'Documents', actor: 'You', kind: 'you', action: 'Started the import journey', tool: 'journey.start', outcome: 'Approved' },
   { time: '24 Nov 09:33', track: 'Vessel arrival', actor: 'Status agent', kind: 'agent', action: `ETA ${VESSEL.eta} confirmed with the shipping line`, tool: 'portcall.eta', outcome: 'Done' },
   { time: VESSEL.found, track: 'Vessel arrival', actor: 'Status agent', kind: 'agent', action: `Marine traffic (AIS) shows the vessel about 8 h late; revised ETA ${VESSEL.revised}`, tool: 'marinetraffic.ais', outcome: 'Delay found' },
   { time: '24 Nov 09:52', track: 'Trade+ · DO', actor: 'DO agent', kind: 'agent', action: 'Drafted the delivery order request with Mediterranean Shipping charges', tool: 'do.draft', outcome: 'Draft ready' },
@@ -586,7 +651,7 @@ export function JourneyStatusCard({ open }: { open: () => void }) {
   ];
   return (
     <div className={card} style={cardStyle}>
-      <Head icon="flow" title="Import journey · IMP-2027-00422" sub={`BL ${DEFAULT_CASE.bl} · ${DEFAULT_CASE.vessel} · 1 container`} />
+      <Head icon="flow" title={`Import journey · BL ${DEFAULT_CASE.bl}`} sub={`BL ${DEFAULT_CASE.bl} · ${DEFAULT_CASE.vessel} · 1 container`} />
       <div className="p-5 grid grid-cols-1 gap-2">
         {rows.map(([ic, t, s, st]) => (
           <div key={t} className="rounded-[12px] px-3 py-3 flex items-center gap-3" style={{ background: '#f7f9fd' }}>
@@ -738,7 +803,7 @@ export function JourneyStepper({ stage, bare }: { stage: number; bare?: boolean 
   return (
     <div className={bare ? '' : 'rounded-[14px] border bg-white px-3 sm:px-4 pt-3 pb-3 mb-3'} style={bare ? undefined : { borderColor: '#e1e7f2', boxShadow: '0 1px 3px rgba(14,27,61,.05)' }}>
       {!bare && <div className="flex items-center justify-between gap-2 mb-2 px-1 flex-wrap">
-        <span className="text-[14px] text-[#1360d2]" style={{ fontWeight: 700 }}>Import journey · IMP-2027-00422</span>
+        <span className="text-[14px] text-[#1360d2]" style={{ fontWeight: 700 }}>Import journey · BL {DEFAULT_CASE.bl}</span>
         <span className="text-[14px] text-[#4f5a78]">{Math.min(stage, 4)} of 4 done</span>
       </div>}
       <ol className="flex items-start" aria-label="Import journey progress">
@@ -807,39 +872,20 @@ export function AutoDoQuestion({ ask }: { ask: Ask }) {
 }
 
 /* Journey start: the case number first (with copy), then the vessel check, then the DO question */
+/* Start of the import journey: the vessel check (the agent's reply above says what it found),
+ * then the delivery order question. */
 export function JourneyOpenedCard({ ask, containers }: { ask: Ask; containers: string[] }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    try { navigator.clipboard?.writeText('IMP-2027-00422'); } catch { /* clipboard not available */ }
-    setCopied(true); window.setTimeout(() => setCopied(false), 1800);
-  };
   return (
     <div className="grid grid-cols-1 gap-3">
-      <div className="rounded-[14px] px-4 py-3 flex items-center gap-3 flex-wrap" style={{ background: '#e3f5ea', border: '1px solid #bfe3cc' }}>
-        <Icon name="check" size={18} strokeWidth={2.4} className="text-[#17703a] flex-shrink-0" />
-        <span className="flex-1 min-w-[220px] text-[15px] text-[#14532d]">
-          <strong style={{ fontWeight: 700 }}>Success:</strong> Import case <strong style={{ fontWeight: 700 }}>IMP-2027-00422</strong> has been created for BL <strong style={{ fontWeight: 700 }}>{DEFAULT_CASE.bl}</strong>.
-          <span className="block text-[14px] text-[#17703a]">Keep this number handy to track your import later.</span>
-        </span>
-        <button type="button" onClick={copy} aria-label="Copy the import case number" className="inline-flex items-center gap-2 h-[36px] px-3 rounded-[8px] bg-white text-[14px] text-[#17703a] border transition-colors hover:bg-[#f2fbf5]" style={{ borderColor: '#bfe3cc', fontWeight: 600 }}>
-          <Icon name={copied ? 'check' : 'copy'} size={15} />{copied ? 'Copied' : 'Copy number'}
-        </button>
-      </div>
-      <div>
-        <AgentSays text={`I've checked the vessel information for you. MV Sample Voyager 027E is running late: it's now expected at Jebel Ali on 30 Nov at 14:30 instead of 06:00.`}>
-          <div className="grid grid-cols-1 gap-3">
-            <VesselRoute title />
-            <AgentSays text={`Shall I request the delivery order for you now? You review and pay, and I'll send it to the shipping agent.`}>
-              <OptionGrid options={[
-                { label: 'Request the delivery order', desc: "I'll draft it now; you review, pay and I send it to the shipping agent", icon: 'do', tone: 'primary', onPick: () => ask('do-draft-chat', 'Request the delivery order', { containers }) },
-                { label: 'See the vessel details', icon: 'ship', onPick: () => ask('container-info', 'Show me the vessel details', { containers, inJourney: true }) },
-                { label: 'Track the ship', icon: 'track', onPick: () => ask('cv-map', 'Track the ship') },
-                { label: 'Which agents are working?', icon: 'bot', onPick: () => ask('cv-agents', 'Which agents are working on my import?') },
-              ]} />
-            </AgentSays>
-          </div>
-        </AgentSays>
-      </div>
+      <VesselRoute title />
+      <AgentSays text={`Shall I request the delivery order for you now? You review and pay, and I'll send it to the shipping agent.`}>
+        <OptionGrid options={[
+          { label: 'Request the delivery order', desc: "I'll draft it now; you review, pay and I send it to the shipping agent", icon: 'do', tone: 'primary', onPick: () => ask('do-draft-chat', 'Request the delivery order', { containers }) },
+          { label: 'See the vessel details', icon: 'ship', onPick: () => ask('container-info', 'Show me the vessel details', { containers, inJourney: true }) },
+          { label: 'Track the ship', icon: 'track', onPick: () => ask('cv-map', 'Track the ship') },
+          { label: 'Which agents are working?', icon: 'bot', onPick: () => ask('cv-agents', 'Which agents are working on my import?') },
+        ]} />
+      </AgentSays>
     </div>
   );
 }

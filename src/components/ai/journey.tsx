@@ -1132,7 +1132,7 @@ export function AuditLogCard({ events, containers = 4, summary }: { events: Audi
 }
 
 /* The audit trail itself: every action so far, filterable */
-export function AuditTrail({ events, tracksDone, openAll }: { events: AuditEvent[]; tracksDone: number; openAll?: boolean }) {
+export function AuditTrail({ events, tracksDone, openAll, title }: { events: AuditEvent[]; tracksDone: number; openAll?: boolean; title?: string }) {
   const [filter, setFilter] = useState<'all' | 'agents' | 'you' | 'external'>('all');
   const [showAll, setShowAll] = useState(!!openAll);
   const key = (t: string) => { const [dd, m, hm] = t.split(' '); return `${m === 'Dec' ? 12 : 11}-${dd}-${hm}`; };
@@ -1154,7 +1154,7 @@ export function AuditTrail({ events, tracksDone, openAll }: { events: AuditEvent
       <div className="bg-white rounded-[14px] border overflow-hidden" style={{ borderColor: C.border }}>
         <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <p className="text-[17px] text-[#111838]" style={{ fontWeight: 600 }}>Audit log · {ACTIVE.c.caseId}</p>
+            <p className="text-[17px] text-[#111838]" style={{ fontWeight: 600 }}>{title ?? `Audit log · ${ACTIVE.c.caseId}`}</p>
             <p className="text-[14px] text-[#4f5a78]">Every step across the four tracks: who did it, the governed tool used, and the outcome</p>
           </div>
           <Btn size="sm" variant="secondary" icon="doc">Download PDF</Btn>
