@@ -539,7 +539,7 @@ function AgentLauncher({ onOpen }: { onOpen: () => void }) {
           <div className="absolute inset-0 ai-open-dim" style={{ background: 'rgba(14,27,61,.22)', backdropFilter: 'blur(6px)' }} />
           {/* a blue-to-white gradient slowly spreads out from the bot until it fills the page */}
           <div className="absolute inset-0" style={{
-            background: `radial-gradient(circle at 50% ${cy}px, #1f6ad8 0%, #4f8ff7 14%, #9fc2fb 32%, #dce9ff 52%, #ffffff 75%)`,
+            background: `radial-gradient(circle at 50% ${cy}px, #8fbaff 0%, #b5d2ff 14%, #d4e5ff 32%, #ecf3ff 52%, #ffffff 75%)`,
             clipPath: `circle(${phase >= 2 ? 150 : 0}% at 50% ${cy}px)`,
             transition: 'clip-path 1100ms cubic-bezier(.45,0,.25,1)',
           }} />
@@ -549,7 +549,7 @@ function AgentLauncher({ onOpen }: { onOpen: () => void }) {
           <div className="absolute left-1/2 ai-open-bot" style={{ top: cy - BOT / 2, marginLeft: -BOT / 2 }}>
             <AgentOrb size={BOT} />
           </div>
-          <p className="absolute left-0 right-0 text-center text-[18px] text-white transition-all duration-400" style={{ top: cy + BOT / 2 + 24, fontWeight: 600, textShadow: '0 1px 8px rgba(14,27,61,.35)', opacity: phase === 2 ? 1 : 0, transform: phase >= 2 ? 'none' : 'translateY(8px)' }}>
+          <p className="absolute left-0 right-0 text-center text-[18px] text-[#0e1b3d] transition-all duration-400" style={{ top: cy + BOT / 2 + 24, fontWeight: 600, opacity: phase === 2 ? 1 : 0, transform: phase >= 2 ? 'none' : 'translateY(8px)' }}>
             Hi Rashed, opening your assistant…
           </p>
         </div>,
