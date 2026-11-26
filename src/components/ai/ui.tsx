@@ -40,6 +40,7 @@ const P: Record<string, React.ReactNode> = {
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   history: <><path d="M3 12a9 9 0 103-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" /></>,
   grid: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
+  copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></>,
   ship: <><path d="M3 17l2 4h14l2-4" /><path d="M5 17V9h14v8" /><path d="M9 9V5h6v4" /></>,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>,
   eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
@@ -64,11 +65,39 @@ export function Icon({ name, size = 18, className, style, strokeWidth = 1.8 }: {
 /* ── AI orb ─────────────────────────────────────────────────────────────── */
 export function Orb({ size = 40, pulse = false }: { size?: number; pulse?: boolean }) {
   return (
-    <span
-      className={`relative inline-flex items-center justify-center rounded-full flex-shrink-0 ${pulse ? 'ai-orb-pulse' : ''}`}
-      style={{ width: size, height: size, background: 'radial-gradient(circle at 32% 28%, #b9d6ff 0%, #4f8ff7 38%, #1360d2 62%, #0e1b3d 100%)', boxShadow: '0 6px 18px rgba(19,96,210,.28), inset 0 -4px 10px rgba(14,27,61,.35)' }}
-    >
-      <Icon name="bot" size={Math.round(size * 0.5)} className="text-white" strokeWidth={1.7} />
+    <span className="relative inline-flex flex-shrink-0" style={{ width: size, height: size }}>
+      <span
+        className="relative inline-flex items-center justify-center rounded-full w-full h-full"
+        style={{ background: 'radial-gradient(circle at 32% 28%, #b9d6ff 0%, #4f8ff7 38%, #1360d2 62%, #0e1b3d 100%)', boxShadow: '0 6px 18px rgba(19,96,210,.28), inset 0 -4px 10px rgba(14,27,61,.35)' }}
+      >
+        <Icon name="bot" size={Math.round(size * 0.5)} className="text-white" strokeWidth={1.7} />
+      </span>
+    </span>
+  );
+}
+
+/* ── AI agent orb: a soft, glowing sphere in the brand blues with drifting
+ * light inside and a breathing halo (inspired by a luminous glass orb). */
+export function AgentOrb({ size = 88, label }: { size?: number; ripple?: boolean; label?: string }) {
+  const icon = Math.round(size * (size < 64 ? 0.44 : 0.32));
+  return (
+    <span role={label ? 'img' : undefined} aria-label={label} title={label} className="ai-orb2-wrap relative inline-block flex-shrink-0" style={{ width: size, height: size }}>
+      <span aria-hidden className="ai-orb2-halo" />
+      <span aria-hidden className="ai-orb2-rim" />
+      <span aria-hidden className="ai-orb2">
+        <span className="ai-orb2-mist m1" />
+        <span className="ai-orb2-mist m2" />
+        <span className="ai-orb2-shine" />
+        <span className="ai-orb2-core">
+          <svg viewBox="0 0 24 24" width={icon} height={icon} fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="ai-orb2-icon">
+            <rect x="3" y="8" width="18" height="12" rx="3" />
+            <path d="M9 12h.01M15 12h.01" />
+            <path d="M9 16h6" />
+            <path d="M12 8V5" />
+            <circle cx="12" cy="4" r="1.2" fill="#ffffff" stroke="none" />
+          </svg>
+        </span>
+      </span>
     </span>
   );
 }

@@ -158,13 +158,11 @@ export const RECENT_CHATS = [
 
 /* Suggested prompts shown as pills on the AI home */
 export const PILLS: { intent: string; label: string; utter: string; icon: string; payload?: Record<string, unknown> }[] = [
-  { intent: 'upload', label: 'Start import process by uploading documents', utter: 'Start the import process by uploading my documents', icon: 'upload' },
-  { intent: 'do-containers', label: 'Start import with container numbers', utter: 'Start an import with my container numbers', icon: 'box' },
-  { intent: 'case-journey', label: 'My import journey', utter: 'Show my import journey', icon: 'flow', payload: { resume: true } },
-  { intent: 'do-approve', label: 'Create delivery order', utter: 'Create a delivery order', icon: 'do' },
-  { intent: 'clearance-create', label: 'Create integrated clearance', utter: 'Create integrated clearance', icon: 'decl' },
-  { intent: 'etoken', label: 'Create eToken', utter: 'Create an eToken', icon: 'truck' },
-  { intent: 'build-agent', label: 'Build an AI agent', utter: 'Build an AI agent to automate my work', icon: 'bot' },
+  { intent: 'start-import', label: 'Start import process', utter: 'Start the import process', icon: 'upload' },
+  { intent: 'journey-status', label: 'My import journey', utter: 'Show my import journey', icon: 'flow' },
+  { intent: 'cv-do-pick', label: 'Create delivery order', utter: 'Create a delivery order', icon: 'do' },
+  { intent: 'clearance-status', label: 'Check clearance status', utter: 'What is the status of my integrated clearance?', icon: 'decl' },
+  { intent: 'cv-slots', label: 'Create eToken', utter: 'Create an eToken', icon: 'truck' },
   { intent: 'do-list', label: 'Recent delivery orders', utter: 'Show my recent delivery orders', icon: 'do' },
   { intent: 'decl-list', label: 'Recent cleared declarations', utter: 'Show my recent cleared declarations', icon: 'decl' },
   { intent: 'track', label: 'Track MEDU48210937', utter: 'Track MEDU48210937', icon: 'track' },
@@ -246,11 +244,7 @@ export const SHIPMENT_HS = [
 export const JOURNEY_AGENTS: { plan: string; track: string; agents: { name: string; job: string }[] }[] = [
   { plan: 'track', track: 'Vessel Operations', agents: [{ name: 'Status agent', job: 'Watches ETA, arrival and container discharge' }] },
   { plan: 'do', track: 'Trade+', agents: [{ name: 'DO agent', job: 'Drafts the delivery order for you to review and pay' }] },
-  { plan: 'decl', track: 'Integrated Clearance', agents: [
-    { name: 'DM permit agent', job: 'Food import permit for HS 2106.90' },
-    { name: 'SIRA permit agent', job: 'Security equipment permit for HS 8525.89' },
-    { name: 'Declaration agent', job: 'Drafts the customs declaration with your permits' },
-  ] },
+  { plan: 'decl', track: 'Integrated Clearance', agents: [{ name: 'Clearance agent', job: 'Checks your declaration and permit status with Dubai Customs and the permit authorities' }] },
   { plan: 'etoken', track: 'Cargo Waves', agents: [{ name: 'CargoWaves agent', job: 'Books Al Bahar Transport, your contracted haulier' }] },
 ];
 
@@ -268,9 +262,7 @@ export const setActiveCase = (m: CaseMeta) => { ACTIVE.c = m; };
 /* Bills of lading whose delivery order request the DO agent has drafted */
 export type DoDraft = CaseMeta & { containers: string[]; size: string; status: string; drafted: string };
 export const DO_DRAFTS: DoDraft[] = [
-  { caseId: 'IMP-2027-00418', bl: 'MEDU48210937', line: 'Mediterranean Shipping', vessel: 'MV Sample Voyager · 027E', origin: 'Shanghai', manifest: 'MSC-027E-JEA-118', containers: ['MSKU0000001', 'MSKU0000002', 'MSKU0000003'], size: "40' HC", status: 'Discharged today', drafted: 'Today, 11:43' },
-  { caseId: 'IMP-2027-00425', bl: 'HLCU21904416', line: 'Hapag-Lloyd', vessel: 'Al Nefud · 041W', origin: 'Hamburg', manifest: 'HLC-041W-JEA-207', containers: ['HLXU8812045', 'HLXU8812046'], size: "40' HC", status: 'Discharged yesterday', drafted: 'Yesterday, 17:20' },
-  { caseId: 'IMP-2027-00427', bl: 'ONEU60442190', line: 'Ocean Network Express', vessel: 'ONE Harmony · 088E', origin: 'Singapore', manifest: 'ONE-088E-JEA-031', containers: ['TGHU5521890', 'TGHU5521891', 'TGHU5521892', 'TGHU5521893'], size: "40' HC", status: 'Discharged this morning', drafted: 'Today, 08:05' },
+  { caseId: 'IMP-2027-00422', bl: 'MEDU48210937', line: 'Mediterranean Shipping', vessel: 'MV Sample Voyager · 027E', origin: 'Shanghai', manifest: 'MSC-027E-JEA-118', containers: ['MSKU0000001'], size: "40' HC", status: 'Arriving 30 Nov', drafted: 'Today, 11:43' },
 ];
 
 /* Bills of lading whose permit requests and declaration the agents have drafted */

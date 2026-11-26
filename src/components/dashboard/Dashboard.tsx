@@ -67,7 +67,7 @@ function Kpi({ icon, label, value, delta, good }: { icon: string; label: string;
   );
 }
 
-export default function Dashboard({ onOpenAI, tabs }: { onOpenAI?: () => void; tabs?: React.ReactNode }) {
+export default function Dashboard({ onOpenAI, tabs, journeys }: { onOpenAI?: () => void; tabs?: React.ReactNode; journeys?: React.ReactNode }) {
   const [period, setPeriod] = useState<Period>('6m');
   const [mode, setMode] = useState<Mode>('all');
 
@@ -107,6 +107,9 @@ export default function Dashboard({ onOpenAI, tabs }: { onOpenAI?: () => void; t
           <Segmented<Period> value={period} onChange={setPeriod} options={[['6m', '6 months'], ['12m', '12 months']]} />
         </div>
       </div>
+
+      {/* Journeys (Sea / Air · Import / Export), as on the classic home */}
+      {journeys && <section className="bg-white rounded-[12px] border border-[#e3e8f3] px-5 sm:px-8 pt-6 pb-8 mb-6" style={{ boxShadow: '0 1px 3px rgba(14,27,61,.05)' }}>{journeys}</section>}
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -178,7 +181,7 @@ export default function Dashboard({ onOpenAI, tabs }: { onOpenAI?: () => void; t
           </div>
         </Card>
         <Card title="Upcoming deadlines" sub="Next 14 days">
-          <ul className="grid gap-3">
+          <ul className="grid grid-cols-1 gap-3">
             {[
               { d: '27', m: 'Nov', t: 'Free time ends', s: 'IMP-2027-00418 · storage charges after', tone: 'you' as const, tag: 'In 3 days' },
               { d: '26', m: 'Nov', t: 'DO validity ends', s: 'IMP-2027-00409 · collected', tone: 'done' as const, tag: 'Done' },

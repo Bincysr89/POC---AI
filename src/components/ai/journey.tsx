@@ -10,7 +10,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DhAmount } from '../Dh';
-import { ACTIVE, COMPANY, VESSEL, WALLET_BALANCE, type Permit } from './data';
+import { ACTIVE, CF_AGENT, COMPANY, VESSEL, WALLET_BALANCE, type Permit } from './data';
 import type { Ask } from './flows';
 import { Btn, C, Field, Icon, Pill, SuccessBanner } from './ui';
 import { CaseDocuments, caseDocs } from './docs';
@@ -58,6 +58,7 @@ const HS_LINES = [
 const DUTY = '20,630.00', DECL_FEE = '120.00', DECL_PAY = '20,750.00';
 /* Arrival: the line said 06:00, marine traffic showed the ship running late */
 const ARR = 3;
+const DECL_NO = '101-27-0049310';
 export const AUTO_DO_KEY = 'dt-auto-do';
 const FREE_DAYS = 5, FREE_UNTIL = '5 Dec 2027', AUTO_DO_CAP = '6,000.00';
 const fullDate = (t: string) => t.replace(/^(\d+ \w+) /, '$1 2027, ');   // '30 Nov 06:00' → '30 Nov 2027, 06:00'   // vessel steps before discharge: ETA, delay check, arrival
@@ -96,19 +97,13 @@ function buildTracks(K: CaseData): Record<TrackKey, { name: string; short: strin
       requires: i => (i.V < TRACKS.V.steps.length ? 'Released once all containers are discharged' : null),
       log: [d('30 Nov 18:40', ACTIVE.c.line, 'external', `Released DO-27-41902 for ${n} containers`, 'do.status', 'Released')] },
   ] },
-  C: { name: 'Integrated Clearance', short: 'Permits & declaration', icon: 'decl', steps: [
-    { id: 'c1', t: 'HS codes checked for permits', who: 'HS agent', kind: 'agent', log: [c('24 Nov 09:36', 'HS agent', 'agent', `${(ACTIVE.c.hs ?? HS_LINES).length} lines classified: ${permitsOf().map(p => `${p.hs} needs ${p.entity === 'Dubai Municipality' ? 'DM' : p.entity}`).join(', ')}`, 'hs.classify', 'Done')] },
-    { id: 'c2', t: 'Permit requests drafted', who: permitsOf().map(p => p.agent).join(' · '), kind: 'agent', log: [
-      ...permitsOf().map((p, i) => c(`24 Nov 09:3${8 + i}`, p.agent, 'agent', `Drafted ${p.type.toLowerCase()} request with ${p.entity}`, `${p.entity === 'SIRA' ? 'sira' : 'dm'}.permit.draft`, 'Draft ready')),
-    ] },
-    { id: 'c3', t: 'Check and pay permit requests', who: 'You', kind: 'you', gate: 'permits' },
-    { id: 'c4', t: 'Permits approved', who: permitsOf().map(p => p.entity).join(' · '), kind: 'external', log:
-      permitsOf().map((p, i) => c(i ? '26 Nov 15:45' : '25 Nov 11:20', p.entity, 'external', `Approved ${p.ref}`, `${p.entity === 'SIRA' ? 'sira' : 'dm'}.permit.status`, 'Approved')) },
-    { id: 'c5', t: 'Declaration drafted with permits', who: 'Declaration agent', kind: 'agent', log: [c('26 Nov 15:47', 'Declaration agent', 'agent', `Drafted import declaration with ${permitsOf().length > 1 ? 'both permits' : 'the permit'} attached`, 'declaration.draft', 'Draft ready')] },
-    { id: 'c6', t: 'Submit declaration to Dubai Customs', who: 'You', kind: 'you', gate: 'declare' },
-    { id: 'c7', t: 'Cleared by Dubai Customs', who: 'Dubai Customs', kind: 'external',
-      requires: i => (i.D < TRACKS.D.steps.length ? 'Customs clears once the DO is released' : null),
-      log: [c('30 Nov 19:10', 'Dubai Customs', 'external', 'Declaration 101-27-0049310 cleared · green channel', 'declaration.status', 'Cleared')] },
+  C: { name: 'Integrated Clearance', short: 'Declaration and permit status', icon: 'decl', steps: [
+    { id: 'c1', t: 'Declaration status checked', who: 'Clearance agent', kind: 'agent', log: [c('24 Nov 09:36', 'Clearance agent', 'agent', `Found declaration ${DECL_NO} filed by ${CF_AGENT}: in review with Dubai Customs`, 'declaration.status', 'In review')] },
+    { id: 'c2', t: 'Permit status checked', who: 'Clearance agent', kind: 'agent', ticks: 2,
+      log: permitsOf().map((p, i) => c(`24 Nov 09:3${7 + i}`, 'Clearance agent', 'agent', `${p.entity} ${p.type.toLowerCase()} ${p.ref}: approved`, `${p.entity === 'SIRA' ? 'sira' : 'dm'}.permit.status`, 'Approved')) },
+    { id: 'c3', t: 'Declaration cleared', who: 'Dubai Customs', kind: 'external', ticks: 3,
+      requires: i => (i.V < ARR ? 'Dubai Customs clears it once the vessel arrives' : null),
+      log: [c('30 Nov 19:10', 'Dubai Customs', 'external', `Declaration ${DECL_NO} cleared · green channel`, 'declaration.status', 'Cleared')] },
   ] },
   H: { name: 'CargoWaves', short: 'Haulage & delivery', icon: 'truck', steps: [
     { id: 'h1', t: 'Haulage order drafted', who: 'CargoWaves agent', kind: 'agent', log: [h('24 Nov 09:40', 'CargoWaves agent', 'agent', `Drafted order for ${n} containers with ${HAULIER.name} (contract rate)`, 'cargowaves.order.draft', 'Draft ready')] },
@@ -168,7 +163,7 @@ const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
 /* ── Delivery slots (CargoWaves) ───────────────────────────────────── */
 type Queue = 'Low' | 'Medium' | 'High';
-type SlotPick = { d: number; t: number };
+export type SlotPick = { d: number; t: number };
 const SLOT_DAYS = Array.from({ length: 7 }, (_, i) => {
   const dt = new Date(2027, 11, 1 + i);
   return { wd: dt.toLocaleDateString('en-GB', { weekday: 'short' }), day: dt.getDate(), mon: 'Dec' };
@@ -182,7 +177,7 @@ const slotInfo = (d: number, t: number, need = 4) => {
   const queue: Queue = bump ? (q === 'Low' ? 'Medium' : 'High') : q;
   return { trucks, queue, open: trucks >= need };     // one truck per container
 };
-function slotPicks(need: number) {
+export function slotPicks(need: number) {
   const all = SLOT_DAYS.flatMap((_, d) => SLOT_TIMES.map((__, t) => ({ d, t, ...slotInfo(d, t, need) })));
   const earliest: SlotPick = all.find(x => x.open) ?? { d: 0, t: 0 };
   const best: SlotPick = all.find(x => x.open && x.queue === 'Low') ?? earliest;
@@ -192,7 +187,7 @@ function slotPicks(need: number) {
 export const slotText = (p: SlotPick) => `${SLOT_DAYS[p.d].wd} ${SLOT_DAYS[p.d].day} Dec · ${SLOT_TIMES[p.t]}`;
 const QCOLOR: Record<Queue, string> = { Low: '#28a745', Medium: '#f2b200', High: '#d03b3b' };
 
-function SlotPicker({ value, onChange, need }: { value: SlotPick; onChange: (p: SlotPick) => void; need: number }) {
+export function SlotPicker({ value, onChange, need }: { value: SlotPick; onChange: (p: SlotPick) => void; need: number }) {
   const { earliest: EARLIEST, best: BEST, lowest: LOWEST } = useMemo(() => slotPicks(need), [need]);
   const same = (a: SlotPick, b: SlotPick) => a.d === b.d && a.t === b.t;
   const quick = [
@@ -316,6 +311,39 @@ function StepChecklist({ items, cols }: { items: FlowItem[]; cols?: boolean }) {
   );
 }
 
+/* Declaration details (read-only) — shown once Dubai Customs has processed it */
+function DeclarationView({ fields, onClose }: { fields: [string, React.ReactNode][]; onClose: () => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [onClose]);
+  return createPortal(
+    <div className="fixed inset-0 z-[400] flex items-center justify-center p-3 sm:p-6" style={{ background: 'rgba(14,27,61,.55)' }} onClick={onClose} role="dialog" aria-modal="true" aria-label="Declaration details">
+      <div className="bg-white rounded-[16px] overflow-hidden w-full max-w-[960px] max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()} style={{ boxShadow: '0 24px 60px rgba(14,27,61,.35)' }}>
+        <div className="flex items-center justify-between gap-3 px-5 py-4" style={{ background: '#0e1b3d' }}>
+          <div className="min-w-0">
+            <p className="text-[18px] text-white" style={{ fontWeight: 700 }}>Import declaration</p>
+            <p className="text-[14px] text-[#c9d6f2]">From Dubai Customs · read only</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="size-[40px] rounded-full flex items-center justify-center text-white hover:bg-white/10"><Icon name="x" size={20} /></button>
+        </div>
+        <div className="overflow-y-auto p-5 sm:p-6">
+          <SuccessBanner><strong>Success:</strong> Declaration cleared by Dubai Customs through the green channel. Your containers can leave the port once the DO is released and the eToken is issued.</SuccessBanner>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 mt-5">
+            {fields.map(([l, v]) => <Field key={l} label={l} value={v} />)}
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-t flex-wrap" style={{ borderColor: '#eef1f6' }}>
+          <Btn size="lg" variant="secondary" onClick={onClose}>Close</Btn>
+          <Btn size="lg" icon="download">Download PDF</Btn>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 /* ── The journey card ───────────────────────────────────────────────── */
 export function CaseJourneyCard({ ask, source = 'documents', files, containers, uploaded, barSlot, initial }: { ask: Ask; source?: CaseSource; files?: string[]; containers?: string[]; uploaded?: Record<string, string>; barSlot?: HTMLElement | null; initial?: JourneyStart }) {
   const K = useMemo(() => caseData(source === 'containers' ? containers ?? [] : DEFAULT_CASE_CONTAINERS), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -343,6 +371,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   const prevDone = useRef<Record<TrackKey, boolean>>({ V: false, D: false, C: false, H: false });
   const [flash, setFlash] = useState<TrackKey | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
+  const [declOpen, setDeclOpen] = useState(false);
   const [autoDo, setAutoDo] = useState(() => { try { return sessionStorage.getItem(AUTO_DO_KEY) === '1'; } catch { return false; } });
   const gateRef = useRef<HTMLDivElement>(null);
   const idxRef = useRef(idx); idxRef.current = idx;
@@ -413,8 +442,6 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
 
   const pass = (k: TrackKey, events: AuditEvent[]) => { userPicked.current = true; setLog(l => [...l, ...events]); setIdx(i => ({ ...i, [k]: i[k] + 1 })); };
   const payDo = () => pass('D', [d('24 Nov 10:02', 'You', 'you', `Reviewed the DO request, set validity to ${validity} and paid (${['wallet', 'credit facility'][method]})`, 'tradepay.pay', `Paid Dh ${DO_PAY}`)]);
-  const payPermits = () => pass('C', [c('24 Nov 10:10', 'You', 'you', `Checked ${PERMS.length > 1 ? 'both permit requests' : 'the permit request'} and paid to submit ${PERMS.length > 1 ? 'them' : 'it'}`, 'tradepay.pay', `Paid Dh ${PPAY}`)]);
-  const declare = () => pass('C', [c('26 Nov 16:05', 'You', 'you', 'Submitted the declaration to Dubai Customs; duty from your duty account', 'declaration.submit', `Paid Dh ${DECL_PAY}`)]);
   const confirmSlot = () => pass('H', [h('24 Nov 10:15', 'You', 'you', `Confirmed delivery slot ${slotText(slot)} for ${NC} containers`, 'cargowaves.order.confirm', 'Confirmed')]);
 
   /* Per-track derived status */
@@ -427,7 +454,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
     const line = {
       V: idx.V === 0 ? 'Confirming ETA…' : idx.V === 1 ? `ETA ${VESSEL.eta} · checking marine traffic…` : idx.V === 2 ? `Delayed · revised ETA ${VESSEL.revised}` : `ATA 30 Nov ${VESSEL.ataTime} (${VESSEL.late} late) · ${discharged} of ${NC} discharged`,
       D: ['Drafting DO request…', 'Draft ready · review and pay', 'Sending to shipping agent…', blocked ? 'Paid · waiting for discharge' : 'Releasing…', 'DO-27-41902 released'][Math.min(i, 4)],
-      C: ['Checking HS codes…', 'Drafting DM and SIRA permits…', '2 permits ready · check and pay', 'Waiting for permit approvals…', 'Drafting declaration…', 'Declaration ready to submit', blocked ? 'Submitted · waiting for DO' : 'Clearing…', 'Cleared · green channel'][Math.min(i, 7)],
+      C: ['Checking the declaration status…', 'Declaration in review · checking permits…', blocked ? `${PERMS.length} permit${PERMS.length > 1 ? 's' : ''} approved · waiting for the vessel` : `${PERMS.length} permit${PERMS.length > 1 ? 's' : ''} approved · Dubai Customs reviewing`, 'Cleared · green channel'][Math.min(i, 3)],
       H: ['Drafting haulage order…', 'Haulier nominated · confirm slot', 'Sending to haulier…', blocked ? 'Sent · waiting for DO and clearance' : 'Haulier reviewing…', 'Scheduling delivery…', `Delivery ${slotText(slot)}`][Math.min(i, 5)],
     }[k];
     return { state, pct, line, blocked };
@@ -452,14 +479,14 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   const META: Record<TrackKey, { title: string; product: string; what: string }> = {
     V: { title: 'Vessel Arrival Notice', product: '', what: 'We follow the ship and tell you when each container is off the vessel.' },
     D: { title: 'Trade+', product: 'Delivery order', what: 'The DO lets you collect your containers. The agent drafts it; you pay and it goes to the shipping agent.' },
-    C: { title: 'Integrated Clearance', product: 'Permits & declaration', what: 'Permit agents request DM and SIRA permits, then the declaration goes to Dubai Customs.' },
+    C: { title: 'Integrated Clearance', product: 'Declaration and permit status', what: `The Clearance agent checks your declaration and permit status. ${CF_AGENT}, your C&F agent, files the declaration.` },
     H: { title: 'Cargo Waves', product: 'Haulage & delivery', what: 'Your contracted haulier collects the containers and delivers them to your warehouse.' },
   };
   const STEPPER_NAME: Record<TrackKey, string> = { V: 'Vessel Operations', D: 'Trade+', C: 'Integrated Clearance', H: 'Cargo Waves' };
   const SHORT: Record<string, string> = {
     v1: 'ETA confirmed', v1d: 'Delay found', v2: 'Vessel arrived late', 'v3-0': 'Containers off the vessel',
     d1: 'DO drafted', d2: 'You pay', d3: 'Sent to shipping agent', d4: 'DO released',
-    c1: 'HS codes checked', c2: 'Permits drafted', c3: 'You pay permits', c4: 'Permits approved', c5: 'Declaration drafted', c6: 'You submit', c7: 'Cleared',
+    c1: 'Declaration status checked', c2: 'Permit status checked', c3: 'Declaration cleared',
     h1: 'Order drafted', h2: 'You pick a slot', h3: 'Sent to haulier', h4: 'Haulier accepts', h5: 'eToken & delivery',
   };
 
@@ -483,7 +510,8 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
   const missingDocs = docsList.filter(d => d.status === 'missing').length;
   const completion: CompletionSummary = {
     containers: CONTAINERS.map(c => c.no), plates: PLATES, slot: slotText(slot),
-    doPaid: DO_PAY, permitPaid: PPAY, dutyPaid: DECL_PAY, docs: docsList,
+    doPaid: DO_PAY, docs: docsList, declNo: DECL_NO,
+    permits: PERMS.map(p => ({ abbr: p.entity === 'SIRA' ? 'SIRA' : 'DM', title: p.type, ref: p.ref, from: p.entity })),
   };
   const NAV: { key: TrackKey | 'DOCS'; label: string; state: 'done' | 'you' | 'run' | 'blocked'; pct: number; icon: string; status: string }[] = [
     { key: 'DOCS', label: 'Documents', state: missingDocs ? 'you' : 'done', pct: Math.round(((docsList.length - missingDocs) / docsList.length) * 100), icon: 'doc', status: missingDocs ? `${missingDocs} to add` : 'Done' },
@@ -647,78 +675,50 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
 
     if (k === 'C') return (
       <div className="grid grid-cols-1 gap-3">
-        {idx.C === 2 ? (
-          <Checkpoint
-            prepared={<>
-              <p className="text-[14px] text-[#40484f] mb-2">Your HS codes need {PERMS.length} permit{PERMS.length > 1 ? 's' : ''}. The {PERMS.map(p => p.agent).join(' and ')} drafted {PERMS.length > 1 ? 'them' : 'it'} for you.</p>
-              <div className="grid grid-cols-1 gap-2">
-                {PERMS.map((p, i) => (
-                  <div key={p.ref} className="ai-glass-row rounded-[12px]">
-                    <button type="button" onClick={() => setOpenPermit(o => (o === i ? null : i))} className="w-full flex items-center gap-3 px-3 py-[10px] text-left" aria-expanded={openPermit === i}>
-                      <span className="w-[48px] h-[40px] rounded-[8px] flex items-center justify-center text-[14px] flex-shrink-0" style={{ background: '#eef4ff', color: C.blue, fontWeight: 800 }}>{p.entity === 'SIRA' ? 'SIRA' : 'DM'}</span>
-                      <span className="flex-1 min-w-0"><span className="block text-[14px] text-[#111838]" style={{ fontWeight: 600 }}>{p.entity}</span><span className="block text-[14px] text-[#4f5a78]">{p.type} · HS {p.hs}</span></span>
-                      <DhAmount value={p.fee} className="text-[14px]" />
-                      <Icon name="chevDown" size={14} className={`text-[#66708c] transition-transform ${openPermit === i ? 'rotate-180' : ''}`} />
-                    </button>
-                    {openPermit === i && <div className="grid grid-cols-2 gap-x-4 gap-y-2 px-3 pb-3"><Field label="Goods" value={p.item} /><Field label="Quantity" value={p.qty} /><Field label="Importer" value={COMPANY} /><Field label="Origin" value="China" /></div>}
-                  </div>
-                ))}
-              </div>
-            </>}
-            action={<div className="grid grid-cols-1 gap-2">
-              <p className="text-[14px] text-[#40484f]">Check the two drafts (tap to open), then pay to submit them to the authorities.</p>
-              {sum(PERMS.map(p => [p.entity, p.fee] as [string, string]), PPAY)}
-              <Btn onClick={payPermits} className="mt-1">Pay and submit&nbsp;<DhAmount value={PPAY} /></Btn>
-            </div>}
-          />
-        ) : idx.C === 5 ? (
-          <Checkpoint
-            prepared={<>
-              <p className="text-[14px] text-[#40484f] mb-2">Both permits are approved and attached to your declaration.</p>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                <Field label="Declaration type" value="Import for local consumption" />
-                <Field label="Permits attached" value="DM · SIRA" />
-                <Field label="Customs value" value={<DhAmount value="412,600.00" />} />
-                <Field label="Goods lines" value="3" />
-              </div>
-            </>}
-            action={<div className="grid grid-cols-1 gap-2">
-              {sum([['Customs duty (5%)', DUTY], ['Declaration fee', DECL_FEE]], DECL_PAY, 'From duty account')}
-              <Btn onClick={declare} className="mt-1">Submit to Dubai Customs</Btn>
-            </div>}
-          />
-        ) : null}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="rounded-[12px] border overflow-hidden" style={{ borderColor: '#eef1f6' }}>
-            <p className="px-3 pt-2 pb-1 text-[14px] text-[#4f5a78]" style={{ fontWeight: 600 }}>Goods and the permits they need</p>
-            <table className="w-full">
-              <tbody>
-                {HSL.map(l => (
-                  <tr key={l.hs} className="border-t text-[14px] text-[#111838]" style={{ borderColor: '#eef1f6' }}>
-                    <td className="px-3 py-[8px]" style={{ fontWeight: 600 }}>{l.hs}</td><td className="px-3 py-[8px]">{l.d}</td>
-                    <td className="px-3 py-[8px] text-right">{l.permit === 'None needed' ? <span className="text-[#4f5a78]">No permit</span> : <span className="inline-flex items-center gap-1 text-[#1360d2]" style={{ fontWeight: 600 }}>{l.permit === 'Dubai Municipality' ? 'DM' : l.permit}</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <p className="text-[14px] text-[#40484f] flex items-start gap-2 rounded-[12px] px-4 py-3" style={{ background: '#f3f8ff', border: '1px solid #d9e6fb' }}>
+          <Icon name="info" size={16} className="mt-[2px] text-[#1360d2] flex-shrink-0" />
+          The Clearance agent only checks status here. {CF_AGENT}, your C&F agent, files the declaration and pays the duty; nothing is drafted or paid from this track.
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="rounded-[14px] border p-4" style={{ borderColor: '#e3e8f3' }}>
+            <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+              <span>
+                <span className="block text-[15px] text-[#111838]" style={{ fontWeight: 700 }}>Customs declaration</span>
+                <span className="block text-[14px] text-[#4f5a78]">{idx.C >= 1 ? DECL_NO : 'Looking it up with Dubai Customs…'}</span>
+              </span>
+              <Pill tone={idx.C >= 3 ? 'done' : idx.C >= 1 ? 'run' : 'wait'}>{idx.C >= 3 ? 'Cleared · green channel' : idx.C >= 1 ? 'In review' : 'Checking…'}</Pill>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <Field label="Filed by" value={CF_AGENT} />
+              <Field label="Submitted" value="24 Nov 2027, 08:50" />
+              <Field label="Type" value="Import for local consumption" />
+              <Field label={idx.C >= 3 ? 'Cleared' : 'Last checked'} value={idx.C >= 3 ? '30 Nov 2027, 19:10' : idx.C >= 1 ? 'Just now' : '—'} />
+            </div>
+            {idx.C >= 3
+              ? <Btn size="sm" icon="eye" className="mt-4" onClick={() => setDeclOpen(true)}>View declaration</Btn>
+              : <p className="text-[14px] text-[#4f5a78] mt-4">You can view the declaration once Dubai Customs has processed it.</p>}
           </div>
-          <div className="grid grid-cols-1 gap-2 content-start">
-            {PERMS.map(p => {
-              const st = idx.C >= 4 ? 'Approved' : idx.C >= 3 ? 'With the authority' : idx.C >= 2 ? 'Drafted · needs payment' : 'Being drafted';
-              return (
+          <div className="rounded-[14px] border p-4" style={{ borderColor: '#e3e8f3' }}>
+            <p className="text-[15px] text-[#111838] mb-3" style={{ fontWeight: 700 }}>Required permits</p>
+            <div className="grid grid-cols-1 gap-2">
+              {PERMS.map(p => (
                 <div key={p.ref} className="rounded-[10px] px-3 py-[10px] flex items-center gap-3" style={{ background: '#f7f9fd' }}>
-                  <span className="min-w-0 flex-1"><span className="block text-[14px] text-[#111838]" style={{ fontWeight: 600 }}>{p.entity} permit</span><span className="block text-[14px] text-[#4f5a78]">{idx.C >= 4 ? p.ref : p.type}</span></span>
-                  <Pill tone={idx.C >= 4 ? 'done' : idx.C === 2 ? 'you' : idx.C >= 3 ? 'run' : 'wait'}>{st}</Pill>
+                  <span className="w-[48px] h-[40px] rounded-[8px] flex items-center justify-center text-[14px] flex-shrink-0" style={{ background: '#eef4ff', color: C.blue, fontWeight: 800 }}>{p.entity === 'SIRA' ? 'SIRA' : 'DM'}</span>
+                  <span className="min-w-0 flex-1"><span className="block text-[14px] text-[#111838]" style={{ fontWeight: 600 }}>{p.type}</span><span className="block text-[14px] text-[#4f5a78]">{p.entity} · {p.ref}</span></span>
+                  <Pill tone={idx.C >= 2 ? 'done' : idx.C === 1 ? 'run' : 'wait'}>{idx.C >= 2 ? 'Approved' : idx.C === 1 ? 'Checking…' : 'Not checked yet'}</Pill>
                 </div>
-              );
-            })}
-            <div className="rounded-[10px] px-3 py-[10px] flex items-center gap-3" style={{ background: '#f7f9fd' }}>
-              <span className="min-w-0 flex-1"><span className="block text-[14px] text-[#111838]" style={{ fontWeight: 600 }}>Customs declaration</span><span className="block text-[14px] text-[#4f5a78]">{idx.C >= 7 ? '101-27-0049310 · green channel' : idx.C === 6 ? 'Clears once the DO is released' : 'Drafted after permits are approved'}</span></span>
-              <Pill tone={idx.C >= 7 ? 'done' : idx.C === 5 ? 'you' : idx.C === 6 ? 'run' : 'wait'}>{idx.C >= 7 ? 'Cleared' : idx.C === 6 ? 'Submitted' : idx.C === 5 ? 'Ready to submit' : 'Not started'}</Pill>
+              ))}
             </div>
           </div>
         </div>
+        {declOpen && (
+          <DeclarationView onClose={() => setDeclOpen(false)} fields={[
+            ['Declaration number', DECL_NO], ['Status', 'Cleared · green channel'], ['Type', 'Import for local consumption'], ['Filed by', CF_AGENT],
+            ['Importer', COMPANY], ['Bill of lading', ACTIVE.c.bl], ['Vessel / voyage', ACTIVE.c.vessel], ['Port of discharge', 'Jebel Ali T3'],
+            ['Containers', HC], ['Submitted', '24 Nov 2027, 08:50'], ['Cleared', '30 Nov 2027, 19:10'], ['Release reference', 'REL-27-0049310'],
+            ['Customs value', <DhAmount key="v" value="412,600.00" />], ['Duty paid by your C&F agent', <DhAmount key="d" value={DUTY} />], ['Permits attached', PERMS.map(p => p.ref).join(', ')], ['Channel', 'Green · no inspection'],
+          ]} />
+        )}
       </div>
     );
 
@@ -961,11 +961,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
             ] },
             { k: 'V', title: META.V.title, agents: [{ name: 'Status agent', job: 'Watches ETA, arrival and container discharge' }] },
             { k: 'D', title: META.D.title, agents: [{ name: 'DO agent', job: `Drafts the delivery order and sends it to ${ACTIVE.c.line}` }] },
-            { k: 'C', title: META.C.title, agents: [
-              { name: 'HS agent', job: `Checked ${HSL.length} HS codes and the permits they need` },
-              ...PERMS.map(p => ({ name: p.agent, job: `${p.type} with ${p.entity} for HS ${p.hs}` })),
-              { name: 'Declaration agent', job: 'Drafts the customs declaration with your permits attached' },
-            ] },
+            { k: 'C', title: META.C.title, agents: [{ name: 'Clearance agent', job: 'Checks your declaration and permit status with Dubai Customs and the permit authorities' }] },
             { k: 'H', title: META.H.title, agents: [
               { name: 'CargoWaves agent', job: `Books ${HAULIER.name}, your contracted haulier` },
               { name: 'eToken agent', job: 'Issues the eToken for the gate-out' },
@@ -1006,7 +1002,7 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
                   <Field label="Consignee" value={COMPANY} />
                   <Field label="Containers" value={HC} />
                 </div>
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
+                <div className="grid grid-cols-1 gap-4 mt-5">
                   <div className="rounded-[12px] border overflow-x-auto" style={{ borderColor: '#eef1f6' }}>
                     <p className="px-3 pt-[10px] pb-2 text-[14px] text-[#111838] flex items-center gap-2" style={{ fontWeight: 600 }}><Icon name="box" size={16} className="text-[#1360d2]" />{NC} containers · {discharged} discharged</p>
                     <table className="w-full">
@@ -1016,19 +1012,6 @@ export function CaseJourneyCard({ ask, source = 'documents', files, containers, 
                           <td className="px-3 py-[9px]" style={{ fontWeight: 600, ...mono }}>{ct.no}</td>
                           <td className="px-3 py-[9px]">{ct.size}</td>
                           <td className="px-3 py-[9px]">{i < discharged ? <Pill tone="done">Discharged · {ct.at}</Pill> : idx.V >= ARR ? <Pill tone="run">Discharging</Pill> : <Pill tone="wait">On board</Pill>}</td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </div>
-                  <div className="rounded-[12px] border overflow-x-auto" style={{ borderColor: '#eef1f6' }}>
-                    <p className="px-3 pt-[10px] pb-2 text-[14px] text-[#111838] flex items-center gap-2" style={{ fontWeight: 600 }}><Icon name="decl" size={16} className="text-[#1360d2]" />{HSL.length} HS codes · {HSL.filter(l => l.permit !== 'None needed').length} need a permit</p>
-                    <table className="w-full">
-                      <thead><tr className="bg-[#f3f6fb]"><th className={th}>HS code</th><th className={th}>Goods</th><th className={th}>Permit</th></tr></thead>
-                      <tbody>{HSL.map(l => (
-                        <tr key={l.hs} className="border-t text-[14px] text-[#111838]" style={{ borderColor: '#eef1f6' }}>
-                          <td className="px-3 py-[9px]" style={{ fontWeight: 600 }}>{l.hs}</td>
-                          <td className="px-3 py-[9px]">{l.d}</td>
-                          <td className="px-3 py-[9px]">{l.permit === 'None needed' ? <span className="text-[#4f5a78]">None needed</span> : <Pill tone="run">{l.permit === 'Dubai Municipality' ? 'DM' : l.permit}</Pill>}</td>
                         </tr>
                       ))}</tbody>
                     </table>

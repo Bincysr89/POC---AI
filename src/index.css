@@ -383,3 +383,123 @@ label {
 @media (prefers-reduced-motion: reduce) { .ai-ship-ping { animation: none; opacity: .4; } }
 .leaflet-container { font-family: inherit; }
 .leaflet-tooltip { font-size: 14px; font-weight: 600; color: #0e1b3d; }
+
+/* AI agent icon ripples (as on Permits & Certificates) */
+.ai-agent-ripple { animation: ai-agent-ripple 2s ease-out infinite; }
+@keyframes ai-agent-ripple { 0% { transform: scale(1); opacity: .4; } 100% { transform: scale(2.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ai-agent-ripple { animation: none; opacity: 0; } }
+
+/* ── AI agent orb: luminous sphere, brand blues, drifting light, breathing halo ── */
+.ai-orb2-wrap { isolation: isolate; }
+.ai-orb2-halo {
+  position: absolute; inset: -38%; border-radius: 50%; z-index: 0; pointer-events: none;
+  background: radial-gradient(circle, rgba(79,143,247,.50) 0%, rgba(79,143,247,.26) 38%, rgba(143,186,255,0) 70%);
+  filter: blur(8px); animation: ai-orb2-breathe 4.2s ease-in-out infinite;
+}
+.ai-orb2 {
+  position: absolute; inset: 0; border-radius: 50%; overflow: hidden; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 50%, #ffffff 0%, #eaf2ff 40%, #b9d3fb 66%, #7fa8ee 86%, #4f8ff7 100%);
+  box-shadow:
+    0 0 0 2px rgba(255,255,255,.75) inset,
+    0 0 16px 4px rgba(255,255,255,.8) inset,
+    0 -10px 24px rgba(15,79,171,.3) inset,
+    0 0 30px 10px rgba(79,143,247,.45),
+    0 0 80px 26px rgba(19,96,210,.18);
+  animation: ai-orb2-float 6s ease-in-out infinite;
+}
+.ai-orb2-mist { position: absolute; inset: -22%; border-radius: 50%; pointer-events: none; }
+.ai-orb2-mist.m1 {
+  background: conic-gradient(from 0deg, rgba(255,255,255,0) 0deg, rgba(255,255,255,.9) 55deg, rgba(19,96,210,.35) 120deg, rgba(255,255,255,0) 170deg, rgba(255,255,255,.8) 230deg, rgba(79,143,247,.45) 300deg, rgba(255,255,255,0) 360deg);
+  filter: blur(8px); opacity: .95; animation: ai-orb2-spin 9s linear infinite;
+}
+.ai-orb2-mist.m2 {
+  background: radial-gradient(circle at 22% 30%, rgba(255,255,255,.95) 0 10%, transparent 26%),
+              radial-gradient(circle at 80% 70%, rgba(79,143,247,.6) 0 10%, transparent 26%),
+              radial-gradient(circle at 76% 22%, rgba(255,255,255,.7) 0 8%, transparent 22%);
+  filter: blur(8px); animation: ai-orb2-spin 13s linear infinite reverse;
+}
+.ai-orb2-shine {
+  position: absolute; left: 16%; top: 10%; width: 40%; height: 26%; border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255,255,255,.7), rgba(255,255,255,0) 70%); filter: blur(2px); pointer-events: none;
+}
+.ai-orb2-core {
+  position: absolute; inset: 0; z-index: 3; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  /* dark at the centre, fading out to nothing so only the outer circle shows an edge */
+  background: radial-gradient(circle at 50% 50%, #0f4fab 0%, #1360d2 20%, #3a7fe8 34%, rgba(79,143,247,.55) 46%, rgba(143,186,255,.18) 58%, rgba(185,214,255,0) 68%);
+}
+.ai-orb2-icon { position: relative; z-index: 3; opacity: 1; filter: drop-shadow(0 1px 4px rgba(8,40,99,.55)); animation: ai-orb2-icon 4.2s ease-in-out infinite; }
+.ai-orb2-rim {
+  position: absolute; inset: -3px; border-radius: 50%; z-index: 2; pointer-events: none;
+  border: 3px solid rgba(255,255,255,.8);
+  box-shadow: 0 0 14px 5px rgba(255,255,255,.75), inset 0 0 12px 4px rgba(255,255,255,.6);
+  filter: blur(1.5px); animation: ai-orb2-rim 4.2s ease-in-out infinite;
+}
+@keyframes ai-orb2-rim { 0%, 100% { opacity: .75; } 50% { opacity: 1; } }
+@keyframes ai-orb2-breathe { 0%, 100% { transform: scale(.92); opacity: .75; } 50% { transform: scale(1.08); opacity: 1; } }
+@keyframes ai-orb2-float { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-3px) scale(1.02); } }
+@keyframes ai-orb2-spin { to { transform: rotate(360deg); } }
+@keyframes ai-orb2-icon { 0%, 100% { opacity: .9; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .ai-orb2-halo, .ai-orb2, .ai-orb2-mist, .ai-orb2-icon, .ai-orb2-rim { animation: none; }
+}
+
+/* Home choice cards (as on the Permits & Certificates assistant) */
+.ai-choice { animation: ai-choice-in .4s cubic-bezier(0.34,1.4,0.64,1) backwards; }
+@keyframes ai-choice-in { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ai-choice { animation: none; } }
+
+/* Answer option boxes in the conversation */
+.ai-opt { background: #fff; border-color: #e2eaf8; box-shadow: 0 1px 4px rgba(14,27,61,.05); transition: all .18s; animation: ai-choice-in .32s cubic-bezier(0.34,1.4,0.64,1) backwards; }
+.ai-opt:not(:disabled):hover { background: #eef4ff; border-color: #1360d2; box-shadow: 0 6px 18px -8px rgba(19,96,210,.35); transform: translateX(3px); }
+.ai-opt:not(:disabled):hover .ai-opt-icon { background: #1360d2 !important; }
+.ai-opt:not(:disabled):hover .ai-opt-chev { color: #1360d2; }
+.ai-opt.is-chosen { background: #eef4ff; border-color: #1360d2; }
+.ai-opt:disabled { cursor: default; }
+/* Small agent orb as the chat avatar: same look as the landing orb */
+.ai-avatar .ai-orb2-halo { inset: -22%; filter: blur(4px); }
+
+/* Agent reply bubble, typing caret and card reveal */
+.ai-bubble { background: #fff; border: 1px solid #e3e9f5; border-radius: 4px 20px 20px 20px; box-shadow: 0 6px 22px -14px rgba(14,27,61,.28); }
+.ai-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -2px; background: #1360d2; animation: ai-caret 1s steps(1) infinite; }
+@keyframes ai-caret { 50% { opacity: 0; } }
+.ai-reveal { animation: ai-reveal .35s ease-out both; }
+@keyframes ai-reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ai-caret, .ai-reveal { animation: none; } }
+
+/* The main answer option (e.g. request the delivery order) */
+.ai-opt-main { color: #fff; background: linear-gradient(135deg, #0f4fab 0%, #1360d2 55%, #3a7fe8 100%); box-shadow: 0 14px 30px -16px rgba(19,96,210,.75); transition: all .2s; animation: ai-choice-in .32s cubic-bezier(0.34,1.4,0.64,1) backwards; }
+.ai-opt-main:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 18px 36px -16px rgba(19,96,210,.85); }
+.ai-opt-main.is-chosen { box-shadow: 0 0 0 3px rgba(19,96,210,.25); }
+.ai-opt-main:disabled { cursor: default; }
+
+/* Agent reply bubbles: soft white-to-blue wash, left to right */
+.ai-bubble { position: relative; background: linear-gradient(90deg, #ffffff 0%, #ffffff 35%, #eef4ff 75%, #dfeaff 100%); border-color: #d9e4f7; }
+
+/* Secondary answer options next to the main action: neutral, not blue */
+.ai-opt-alt { background: #fff; border: 1px solid #d5ddea; color: #111838; font-weight: 600; transition: all .15s; }
+.ai-opt-alt:not(:disabled):hover { background: #f3f5f9; border-color: #aab4c8; }
+.ai-opt-alt.is-chosen { background: #f3f5f9; border-color: #8f9bb3; }
+.ai-opt-alt:disabled { cursor: default; }
+
+/* Ship marker on the chat route snippet: gentle pulse */
+.ai-vessel-dot { animation: ai-vessel-pulse 2s ease-in-out infinite; }
+@keyframes ai-vessel-pulse { 0%,100% { box-shadow: 0 0 0 4px rgba(242,178,0,.2); } 50% { box-shadow: 0 0 0 9px rgba(242,178,0,.08); } }
+@media (prefers-reduced-motion: reduce) { .ai-vessel-dot { animation: none; } }
+
+/* Delivery tracker while it loads: a soft light sweep along the green bar */
+.ai-load-bar { background-size: 200% 100% !important; background-image: linear-gradient(90deg,#28a745 0%,#5fd17a 40%,#bff0cc 50%,#5fd17a 60%,#28a745 100%) !important; animation: ai-load-sweep 1.4s linear infinite; }
+@keyframes ai-load-sweep { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .ai-load-bar { animation: none; } }
+
+/* Assistant page arriving after the bot flies in from the home page */
+.ai-page-open { animation: ai-page-open .45s ease-out both; }
+@keyframes ai-page-open { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ai-page-open { animation: none; } }
+
+/* Opening the assistant from the home page: the bot fades up in the centre */
+.ai-open-dim { animation: ai-open-dim .4s ease-out both; }
+@keyframes ai-open-dim { from { opacity: 0; } to { opacity: 1; } }
+.ai-open-bot { animation: ai-open-bot .55s cubic-bezier(.22,1,.36,1) both; }
+@keyframes ai-open-bot { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }

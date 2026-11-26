@@ -1,5 +1,6 @@
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import Header from '../components/Header';
 import ServiceCatalogueModal from '../components/ServiceCatalogueModal';
 import IntegratedClearanceModal from '../components/IntegratedClearanceModal';
@@ -9,8 +10,7 @@ import TradePlusJourneyPage from '../components/TradePlusJourneyPage';
 import BookingExecutionPage from '../components/BookingExecutionPage';
 import DeclarationListPage from '../components/DeclarationListPage';
 import AgenticWorkspace from '../components/ai/AgenticWorkspace';
-import Dashboard from '../components/dashboard/Dashboard';
-import { Icon, Orb } from '../components/ai/ui';
+import { Icon, AgentOrb } from '../components/ai/ui';
 import {
   TradePlusIcon,
   IntegratedClearanceIcon,
@@ -211,7 +211,7 @@ const AGENT_TYPE_OPTIONS: { id: Agent; label: string; icon: React.ReactNode; rou
   { id: 'other-agent', label: 'Other Agent Type', icon: <OtherAgentIcon size={72} />, route: '/other-agent-type' },
 ];
 
-export default function LandingPage() {
+export default function LandingPage({ view = 'home' }: { view?: 'home' | 'assistant' }) {
   const params = useParams<{ agent: Agent }>();
   const navigate = useNavigate();
   const agent = (params.agent ?? 'trader') as Agent;
@@ -234,24 +234,7 @@ export default function LandingPage() {
   const [declPermitChat, setDeclPermitChat] = useState(false);
   const [permitsExport, setPermitsExport] = useState(false);
   const [showDeclarationList, setShowDeclarationList] = useState(false);
-  const [search, setSearch] = useSearchParams();
-  const tab: 'ai' | 'dashboard' = search.get('tab') === 'dashboard' ? 'dashboard' : 'ai';
-  const setTab = (t: 'ai' | 'dashboard') => { setSearch(t === 'ai' ? {} : { tab: t }, { replace: true }); window.scrollTo({ top: 0 }); };
   const isAirMode = mode === 'air';
-  /* Experience switch — Agentic AI / Dashboard, centred at the top of each view */
-  const tabs = (
-    <div role="tablist" aria-label="Home experience" className="inline-flex rounded-full p-[4px] gap-[2px]" style={{ background: 'rgba(255,255,255,.75)', border: '1px solid #dbe3f0', boxShadow: '0 6px 18px -10px rgba(14,27,61,.25)', backdropFilter: 'blur(10px)' }}>
-      {([['ai', 'Agentic AI', 'sparkle'], ['dashboard', 'Dashboard', 'grid']] as const).map(([id, label, icon]) => (
-        <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-          className={`relative inline-flex items-center gap-[8px] h-[40px] px-[18px] rounded-full whitespace-nowrap text-[15px] transition-all ${tab === id ? 'bg-[#0e1b3d] text-white shadow-[0_4px_14px_-4px_rgba(14,27,61,0.45)]' : 'text-[#40484f] hover:text-[#0e1b3d]'}`}
-          style={{ fontWeight: 500 }}>
-          <Icon name={icon} size={16} />
-          {label}
-          {id === 'ai' && <span className={`text-[14px] px-[8px] h-[22px] inline-flex items-center rounded-full ${tab === id ? 'bg-white/15 text-[#cfe0ff]' : 'bg-[#e6f0ff] text-[#1360d2]'}`} style={{ fontWeight: 700 }}>New</span>}
-        </button>
-      ))}
-    </div>
-  );
   const activeCards = isAirMode
     ? (AIR_JOURNEYS[airPersona]?.[tradeMode] ?? [])
     : (SEA_JOURNEYS[seaPersona]?.[tradeMode] ?? []);
@@ -259,13 +242,197 @@ export default function LandingPage() {
     ? `Proposed Profile Journey - ${AIR_PERSONAS.find(p => p.id === airPersona)?.label} (Air ${tradeMode})`
     : `Proposed Profile Journey - ${SEA_PERSONAS.find(p => p.id === seaPersona)?.label} (Sea ${tradeMode})`;
 
+  /* Journeys section (Sea / Air · Import / Export), as on the classic home */
+  const journeys = (
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-4 mb-2">
+              <h3 className="text-[#051937] text-[24px] font-medium min-w-0">{journeyTitle}</h3>
+              <AgentLauncher onOpen={() => navigate(`/landing/${agent}/assistant`)} />
+            </div>
+            <div className="w-[40px] h-[3px] bg-[#ea2428] mb-6" />
+
+            {/* Import / Export + Sea / Air toggles */}
+            <div className="flex items-center gap-3 mb-6 flex-wrap">
+              {/* Import / Export pill toggle */}
+              <div className="flex bg-[#f0f4fa] rounded-full p-[3px] gap-1">
+                <button
+                  onClick={() => setTradeMode('import')}
+                  className={`px-5 py-1.5 rounded-full text-[14px] font-medium transition-all duration-200 ${tradeMode === 'import' ? 'bg-[#0e1b3d] text-white shadow-sm' : 'text-[#4f5a78] hover:text-[#0e1b3d]'}`}
+                >
+                  Import
+                </button>
+                <button
+                  onClick={() => setTradeMode('export')}
+                  className={`px-5 py-1.5 rounded-full text-[14px] font-medium transition-all duration-200 ${tradeMode === 'export' ? 'bg-[#0e1b3d] text-white shadow-sm' : 'text-[#4f5a78] hover:text-[#0e1b3d]'}`}
+                >
+                  Export
+                </button>
+              </div>
+
+              <div className="w-px h-6 bg-[#dde3ee]" />
+
+              {/* Sea / Air pill toggle */}
+              <div className="flex bg-[#f0f4fa] rounded-full p-[3px] gap-1">
+                <button
+                  onClick={() => !config.airOnly && setMode('sea')}
+                  disabled={config.airOnly}
+                  className={`flex items-center gap-2 px-5 py-1.5 rounded-full text-[14px] font-medium transition-all duration-200 ${mode === 'sea' ? 'bg-white text-[#0e1b3d] shadow-sm border border-[#dde3ee]' : 'text-[#4f5a78] hover:text-[#0e1b3d]'} ${config.airOnly ? 'opacity-30 cursor-not-allowed' : ''}`}
+                >
+                  <img src={seaIconSrc} alt="" className="w-[18px] h-[18px]" />
+                  Sea
+                </button>
+                  <button
+                    onClick={() => setMode('air')}
+                    className={`flex items-center gap-2 px-5 py-1.5 rounded-full text-[14px] font-medium transition-all duration-200 ${mode === 'air' ? 'bg-white text-[#0e1b3d] shadow-sm border border-[#dde3ee]' : 'text-[#4f5a78] hover:text-[#0e1b3d]'}`}
+                  >
+                    <img src={airIconSrc} alt="" className="w-[18px] h-[18px]" />
+                    Air
+                  </button>
+                </div>
+              </div>
+
+            <div className="border-t border-[#dde3ee] mb-8" />
+
+            {/* Journey cards — icon circle + expanding card on hover */}
+            <div className="relative flex flex-wrap lg:flex-nowrap items-start w-full gap-3">
+              {/* Connector line through centre of circles */}
+              {activeCards.length > 1 && (
+                <div className="absolute top-[32px] left-[60px] right-[60px] z-[1] pointer-events-none hidden lg:block" style={{ height: '1.5px', backgroundImage: 'repeating-linear-gradient(to right, #0e1b3d 0px, #0e1b3d 10px, transparent 10px, transparent 20px)' }} />
+              )}
+
+              {activeCards.map((card) => (
+                <div
+                  key={card.step}
+                  className="group relative flex flex-col items-center flex-1 min-w-[120px] cursor-pointer z-[2]"
+                  onClick={() => {
+                    if (card.title === 'Integrated Clearance') { setShowIntegratedClearance(false); setShowDeclarationList(true); }
+                    if (card.title === 'Permits & Certificates') {
+                      setPermitsExport(isAirMode && tradeMode === 'export');
+                      setShowPermits(true);
+                    }
+                    if (card.title === 'Trade +') setShowTradePlus(true);
+                    if (card.title === 'Booking & Execution') setShowBookingExecution(true);
+                  }}
+                >
+                  {/* Icon circle — z-20 stays above rising card */}
+                  <div className="relative z-[20] w-[65px] h-[65px] rounded-full bg-white border-2 border-[#ddd] flex items-center justify-center flex-shrink-0 transition-all duration-300
+                    group-hover:border-[#1360d2] group-hover:shadow-[0_4px_16px_rgba(19,96,210,0.18)]">
+                    {card.icon}
+                  </div>
+
+                  {/* Gap */}
+                  <div className="h-3 flex-shrink-0" />
+
+                  {/* Card — rises upward behind circle on hover, enclosing the circle with clearance */}
+                  <div className="relative w-full z-[5] rounded-[6px] overflow-hidden transition-all duration-300 ease-in-out
+                    h-[180px] bg-white border border-[#e6edf8]
+                    group-hover:-translate-y-[89px] group-hover:h-[286px]
+                    group-hover:border-[rgba(234,36,40,0.6)] group-hover:shadow-[0_8px_32px_-4px_rgba(14,27,61,0.15)]">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center transition-all duration-300
+                      group-hover:pt-[82px]">
+                      <p className="text-[#0e1b3d] leading-tight mb-2" style={{ fontSize: 20, fontWeight: 500 }}>{card.title}</p>
+                      <div className="w-6 h-[2px] bg-[#ea2428] mx-auto rounded-full mb-2" />
+                      <p className="text-[14px] text-[#4f5a78] leading-snug">{card.desc}</p>
+                      <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ea2428" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M5 12h14M13 6l6 6-6 6"/>
+                        </svg>
+                      </div>
+                    </div>
+                    {/* Blue bottom arc on hover */}
+                    <svg className="absolute bottom-0 left-0 w-full pointer-events-none opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                      height="36" viewBox="0 0 200 36" preserveAspectRatio="none">
+                      <path d="M 0 0 Q 100 36 200 0" fill="none" stroke="rgba(234,36,40,0.65)" strokeWidth="2" />
+                    </svg>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+  );
+
+  if (view === 'assistant') return (
+    <div className="min-h-screen ai-page-open" style={{ background: '#f6f8fc' }}>
+      <Header onServiceCatalogue={() => setShowServiceCatalogue(true)} />
+      <AgenticWorkspace />
+    </div>
+  );
+
   return (
-    <div className="min-h-screen" style={{ background: '#f6f8fc' }}>
+    <div className="min-h-screen" style={{ backgroundImage: `url(${bgSrc})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
       <Header onServiceCatalogue={() => setShowServiceCatalogue(true)} />
 
-      {tab === 'ai' && <AgenticWorkspace tabs={tabs} onOpenDashboard={() => setTab('dashboard')} />}
+      <div className="w-full px-4 sm:px-8 lg:px-[60px] pt-10">
+        <div className="flex flex-col sm:flex-row gap-[30px] mb-10 items-stretch">
+          {/* Profile card */}
+          <div className="bg-white border border-[#ddd] rounded w-full sm:w-[305px] relative overflow-hidden flex flex-col">
+            {/* Eclipse dome image */}
+            <img src={eclipseSrc} alt="" className="absolute top-0 left-0 w-full object-cover object-top pointer-events-none" />
+            {/* JS circle — center aligned with eclipse bottom edge */}
+            <div className="absolute left-1/2 -translate-x-1/2 top-[30px] bg-white border-[5px] border-[#f8fafd] rounded-full size-[80px] flex items-center justify-center shadow-md z-10">
+              <span className="text-[#0e1b3d] font-bold text-[26px]">JS</span>
+            </div>
+            <div className="relative flex flex-col items-center px-6 gap-3 flex-1 pb-5" style={{ paddingTop: 'calc(30px + 80px + 14px)' }}>
+              <div className="text-center">
+                <p className="text-[#697498] text-[12px] font-medium">Welcome to Dubai Trade</p>
+                <p className="text-[#0e1b3d] text-[16px] font-medium">Rashed</p>
+              </div>
+              <button
+                onClick={() => setShowAgentModal(true)}
+                className="border border-[#8a9099] rounded h-[36px] w-full text-[#0e1b3d] text-[18px] font-medium capitalize hover:border-[#1360d2] hover:text-[#1360d2] transition-colors"
+              >
+                {LABELS[agent]}
+              </button>
+              <button className="bg-[#1360d2] text-white h-[35px] w-full rounded flex items-center justify-center gap-1 font-medium text-[16px] capitalize">
+                <svg viewBox="0 0 14 14" className="size-[14px]" fill="currentColor"><rect x="1" y="1" width="5" height="5" /><rect x="8" y="1" width="5" height="5" /><rect x="1" y="8" width="5" height="5" /><rect x="8" y="8" width="5" height="5" /></svg>
+                My Dashboard
+              </button>
+            </div>
+          </div>
 
-      {tab === 'dashboard' && <Dashboard tabs={tabs} onOpenAI={() => setTab('ai')} />}
+          {/* Banner */}
+          <div className="flex-1 rounded overflow-hidden relative">
+            <img src={bannerSrc} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-[30px] items-start pb-12">
+          {/* Favourite services */}
+          <div className="w-full sm:w-[305px] flex flex-col gap-6">
+            <div>
+              <h3 className="text-[#051937] text-[24px] font-medium">Favourite Services</h3>
+              <div className="w-[32px] h-[3px] bg-[#ea2428] mt-1" />
+            </div>
+            <div className="bg-white border border-[#ddd] rounded p-2 flex flex-col gap-2 max-h-[414px] overflow-y-auto">
+              {FAVOURITE_SERVICES.map((s, i) => (
+                <button
+                  key={s}
+                  className={`flex items-center gap-2 px-2 py-3 rounded text-[16px] text-[#060c28] text-left ${
+                    i === 0 ? 'bg-[rgba(17,24,56,0.07)] rounded-lg' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <svg viewBox="0 0 24 24" className="size-[24px] flex-shrink-0" fill="#f5b400">
+                    <path d="M12 2l2.4 7.4H22l-6.2 4.6 2.4 7.4L12 16.8l-6.2 4.6 2.4-7.4L2 9.4h7.6z" />
+                  </svg>
+                  <span className="flex-1">{s}</span>
+                  {i === 0 && (
+                    <svg viewBox="0 0 24 24" className="size-[20px]" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
+            <button className="bg-[rgba(14,27,61,0.8)] text-white h-[35px] rounded font-medium text-[16px] capitalize">
+              Load More
+            </button>
+          </div>
+
+
+          {/* Journey */}
+          {journeys}
+        </div>
+      </div>
 
       {showPermits && <PermitsCertificatesPage onClose={() => setShowPermits(false)} createPrefill={permitsExport ? { activity: 'Export', mode: 'Air' } : undefined} />}
       {showTradePlus && (
@@ -337,6 +504,56 @@ export default function LandingPage() {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* AI agent on the home page, beside the journey heading: greets on hover, opens the assistant page on click */
+function AgentLauncher({ onOpen }: { onOpen: () => void }) {
+  const [phase, setPhase] = useState(0);   // 0 idle · 1 bot shows in the centre · 2 gradient spreads · 3 handing over
+
+  const open = () => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { onOpen(); return; }
+    setPhase(1);
+    window.setTimeout(() => setPhase(2), 450);    // let the bot settle in the centre first
+    window.setTimeout(() => setPhase(3), 1500);   // gradient has filled the page; fade to the page background
+    window.setTimeout(onOpen, 1800);
+  };
+
+  const BOT = 150;
+  const cy = typeof window !== 'undefined' ? window.innerHeight / 2 - 30 : 0;
+
+  return (
+    <div className="relative group flex items-center flex-shrink-0">
+      <span role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 z-[20] pointer-events-none opacity-0 translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 group-focus-within:opacity-100 group-focus-within:translate-x-0 transition-all duration-200 ai-bubble px-4 py-3 text-[15px] text-[#1b2240] whitespace-nowrap" style={{ position: 'absolute', fontWeight: 600, borderRadius: '20px 20px 4px 20px', visibility: phase ? 'hidden' : undefined }}>
+        Hi, how can I help you?
+      </span>
+      <button type="button" onClick={open} aria-label="Open the Dubai Trade AI assistant" className="rounded-full transition-all duration-500 hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1360d2]" style={{ opacity: phase ? 0 : 1 }}>
+        <AgentOrb size={84} />
+      </button>
+
+      {phase > 0 && createPortal(
+        <div className="fixed inset-0 z-[500]" aria-live="polite">
+          {/* the home page softens behind the bot */}
+          <div className="absolute inset-0 ai-open-dim" style={{ background: 'rgba(14,27,61,.22)', backdropFilter: 'blur(6px)' }} />
+          {/* a blue-to-white gradient slowly spreads out from the bot until it fills the page */}
+          <div className="absolute inset-0" style={{
+            background: `radial-gradient(circle at 50% ${cy}px, #1f6ad8 0%, #4f8ff7 14%, #9fc2fb 32%, #dce9ff 52%, #ffffff 75%)`,
+            clipPath: `circle(${phase >= 2 ? 150 : 0}% at 50% ${cy}px)`,
+            transition: 'clip-path 1100ms cubic-bezier(.45,0,.25,1)',
+          }} />
+          {/* then the blue settles to the assistant page's light background */}
+          <div className="absolute inset-0 transition-opacity duration-300" style={{ background: '#f6f8fc', opacity: phase >= 3 ? 1 : 0 }} />
+          {/* the bot appears in the centre */}
+          <div className="absolute left-1/2 ai-open-bot" style={{ top: cy - BOT / 2, marginLeft: -BOT / 2 }}>
+            <AgentOrb size={BOT} />
+          </div>
+          <p className="absolute left-0 right-0 text-center text-[18px] text-white transition-all duration-400" style={{ top: cy + BOT / 2 + 24, fontWeight: 600, textShadow: '0 1px 8px rgba(14,27,61,.35)', opacity: phase === 2 ? 1 : 0, transform: phase >= 2 ? 'none' : 'translateY(8px)' }}>
+            Hi Rashed, opening your assistant…
+          </p>
+        </div>,
+        document.body,
       )}
     </div>
   );

@@ -47,18 +47,17 @@ export function VesselMap({ vessel, arrived, delayed, discharged, total, onClose
     }).addTo(map).bindTooltip('Jebel Ali Terminal 3', { direction: 'top', offset: [0, -16] });
 
     // Ship, pointing along its course
-    const [a, b] = [ROUTE[Math.max(0, here - 1)], ROUTE[here]];
-    const course = arrived ? 0 : (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+        // a ship icon, upright, so it reads as a vessel at a glance
     const pos = ROUTE[here];
     L.marker(pos, {
       zIndexOffset: 1000,
-      icon: L.divIcon({ className: '', iconSize: [44, 44], iconAnchor: [22, 22],
-        html: `<div style="position:relative;width:44px;height:44px">
+      icon: L.divIcon({ className: '', iconSize: [52, 52], iconAnchor: [26, 26],
+        html: `<div style="position:relative;width:52px;height:52px">
           ${arrived ? '' : '<span class="ai-ship-ping"></span>'}
           <div style="position:absolute;inset:6px;border-radius:50%;background:${delayed && !arrived ? '#f2b200' : '#1360d2'};border:3px solid #fff;box-shadow:0 6px 14px rgba(14,27,61,.35);display:flex;align-items:center;justify-content:center">
-            <svg width="16" height="16" viewBox="0 0 24 24" style="transform:rotate(${course}deg)"><path d="M12 2l6 18-6-4-6 4z" fill="#fff"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="8" width="4" height="4" rx=".6" fill="#fff"/><rect x="10.5" y="8" width="4" height="4" rx=".6" fill="#fff" opacity=".85"/><rect x="8.2" y="4" width="4" height="3.6" rx=".6" fill="#fff" opacity=".85"/><rect x="15" y="6" width="2.4" height="6" rx=".5" fill="#fff"/><path d="M2 13h20l-2.6 5.2a1.5 1.5 0 0 1-1.34.8H5.94a1.5 1.5 0 0 1-1.34-.8z" fill="#fff"/><path d="M3 21.2c1.5 0 1.5-.8 3-.8s1.5.8 3 .8 1.5-.8 3-.8 1.5.8 3 .8 1.5-.8 3-.8 1.5.8 3 .8" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round" opacity=".8"/></svg>
           </div></div>` }),
-    }).addTo(map).bindTooltip(vessel, { direction: 'left', offset: [-20, 0], permanent: true });
+    }).addTo(map).bindTooltip(vessel, { direction: 'top', offset: [0, -26], permanent: true });
 
     map.fitBounds(L.latLngBounds(ROUTE).pad(0.15));
     setTimeout(() => map.invalidateSize(), 60);

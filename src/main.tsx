@@ -17,6 +17,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Route path="/customer-type" element={<Navigate to="/landing/trader" replace />} />
         <Route path="/other-agent-type" element={<RequireAuth><OtherAgentTypePage /></RequireAuth>} />
         <Route path="/landing/:agent/import" element={<RequireAuth><ImportPage /></RequireAuth>} />
+        <Route path="/landing/:agent/assistant" element={<RequireAuth><LandingPage view="assistant" /></RequireAuth>} />
         <Route path="/landing/:agent" element={<RequireAuth><LandingPage /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

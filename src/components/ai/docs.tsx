@@ -22,18 +22,13 @@ export function docFields(type: string, n: number): [string, string][] {
 
 /* Documents for a case, by how it was started */
 export function caseDocs(source: 'documents' | 'containers', files: string[] | undefined, extra: Record<string, string>): CaseDoc[] {
+  // Only the bill of lading is needed for now (uploaded, or fetched from the line)
   if (source === 'containers') {
-    return [
-      { name: `BL_${ACTIVE.c.bl} (e-BL)`, type: 'Bill of lading', source: `Fetched from ${ACTIVE.c.line}`, status: 'read', fields: 18 },
-      { name: `Manifest ${ACTIVE.c.manifest}`, type: 'Cargo manifest', source: `Fetched from ${ACTIVE.c.line}`, status: 'read', fields: 14 },
-      ...(['Commercial invoice', 'Packing list'] as const).map(t => extra[t]
-        ? { name: extra[t], type: t, source: 'Uploaded by you', status: 'read' as const, fields: t === 'Commercial invoice' ? 21 : 24 }
-        : { name: 'Not uploaded yet', type: t, source: 'Needed before the declaration is filed', status: 'missing' as const }),
-    ];
+    return [{ name: `BL_${ACTIVE.c.bl} (e-BL)`, type: 'Bill of lading', source: `Fetched from ${ACTIVE.c.line}`, status: 'read', fields: 18 }];
   }
-  const names = files?.length ? files : SAMPLE_DOCS.map(d => d.name);
-  return names.map((name, i) => {
-    const d = SAMPLE_DOCS[i % SAMPLE_DOCS.length];
+  const names = (files?.length ? files : [SAMPLE_DOCS[0].name]).slice(0, 1);
+  return names.map(name => {
+    const d = SAMPLE_DOCS[0];
     return { name, type: d.type, source: 'Uploaded by you', status: 'read', fields: d.fields };
   });
 }

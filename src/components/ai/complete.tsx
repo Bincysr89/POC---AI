@@ -12,8 +12,8 @@ export type CompletionSummary = {
   plates: string[];
   slot: string;
   doPaid: string;
-  permitPaid: string;
-  dutyPaid: string;
+  declNo: string;
+  permits: { abbr: string; title: string; ref: string; from: string }[];
   docs: CaseDoc[];
 };
 
@@ -63,28 +63,52 @@ function DoneMark() {
   );
 }
 
-export function ImportComplete({ summary }: { summary: CompletionSummary }) {
-  const { containers, plates, slot, doPaid, permitPaid, dutyPaid, docs } = summary;
-  const [notify, setNotify] = useState({ sms: true, email: true });
+/* How many documents the phone link opens for this import */
+export function docCount(summary: CompletionSummary) {
+  return 4 + summary.permits.length + 1 + summary.docs.filter(d => d.status === 'read').length;
+}
+
+/* Scan-to-download QR card, on its own so the chat can introduce it */
+export function QrCard({ count }: { count: number }) {
+  return (
+    <div className="inline-flex items-center gap-3 rounded-[14px] p-3 border bg-white" style={{ borderColor: '#dbe6f7', background: 'linear-gradient(135deg,#f6f9ff,#ffffff)' }}>
+      <span className="rounded-[10px] p-[6px] bg-white border flex-shrink-0" style={{ borderColor: '#e3e8f3' }}>
+        <QRCode text={`https://www.dubaitrade.ae/m/case/${ACTIVE.c.caseId}/documents?k=8F3K2Q`} size={120} />
+      </span>
+      <span className="max-w-[230px]">
+        <span className="flex items-center gap-2 text-[14px] text-[#111838]" style={{ fontWeight: 700 }}><Icon name="download" size={15} className="text-[#1360d2]" />Scan to track and download</span>
+        <span className="block text-[14px] text-[#4f5a78] mt-1 leading-snug">Track your cargo and open all {count} documents in the Dubai Trade app. Link valid for 7 days; sign in with UAE PASS.</span>
+      </span>
+    </div>
+  );
+}
+
+export function ImportComplete({ summary, brief, tracks, onTracked }: { summary: CompletionSummary; brief?: boolean; tracks?: React.ReactNode; onTracked?: () => void }) {
+  const { containers, plates, slot, doPaid, docs, declNo, permits } = summary;
+  const [notify, setNotify] = useState({ whatsapp: true, email: true });
   const [got, setGot] = useState<Record<string, boolean>>({});
   const [zipping, setZipping] = useState(0); // 0 idle, 1..100 progress
-  const [stage, setStage] = useState(1);     // delivery stage shown live
+  const live = !!onTracked;                  // chat mode: the tracker loads step by step
+  const [stage, setStage] = useState(live ? 0 : 1);   // delivery stage shown live
+  const loading = live && stage < 2;
 
-  // Gentle "live" feel: the tracker moves from eToken issued to trucks booked
-  useEffect(() => { const t = setTimeout(() => setStage(2), 1800); return () => clearTimeout(t); }, []);
+  // Gentle "live" feel: the truck moves along slowly, one step at a time, then hands back to the chat
+  useEffect(() => {
+    if (!live) { const t = setTimeout(() => setStage(2), 1800); return () => clearTimeout(t); }
+    const ts = [setTimeout(() => setStage(1), 2600), setTimeout(() => setStage(2), 5000), setTimeout(() => onTracked?.(), 6400)];
+    return () => ts.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const issued: DL[] = [
     { id: 'do', abbr: 'DO', title: 'Delivery order', ref: 'DO-27-41902', from: ACTIVE.c.line, meta: `${containers.length} containers` },
-    { id: 'dm', abbr: 'DM', title: 'Food import permit', ref: 'DM-PRM-27-55120', from: 'Dubai Municipality', meta: 'HS 2106.90' },
-    { id: 'sira', abbr: 'SIRA', title: 'Security equipment permit', ref: 'SIRA-27-08841', from: 'SIRA', meta: 'HS 8525.89' },
-    { id: 'decl', abbr: 'DEC', title: 'Import declaration', ref: '101-27-0049310', from: 'Dubai Customs', meta: 'Cleared · green channel' },
-    { id: 'etoken', abbr: 'ET', title: 'eToken', ref: 'ET-27-0091602', from: 'DP World', meta: `${containers.length} trucks · ${slot}` },
+    ...permits.map(p => ({ id: `pm-${p.ref}`, abbr: p.abbr, title: p.title, ref: p.ref, from: p.from, meta: 'Approved' })),
+    { id: 'decl', abbr: 'DEC', title: 'Import declaration', ref: declNo, from: 'Dubai Customs', meta: 'Cleared · green channel' },
+    { id: 'etoken', abbr: 'ET', title: 'eToken', ref: 'ET-27-0091602', from: 'DP World', meta: `${containers.length} truck${containers.length > 1 ? 's' : ''} · ${slot}` },
     { id: 'cw', abbr: 'CW', title: 'Haulage order and delivery schedule', ref: 'CW-27-55813', from: 'Cargo Waves · Al Bahar Transport', meta: slot },
   ];
   const receipts: DL[] = [
     { id: 'r-do', abbr: 'TP', title: 'TradePay receipt · delivery order', ref: 'TP-27114085', from: 'TradePay', meta: <DhAmount value={doPaid} /> },
-    { id: 'r-pm', abbr: 'TP', title: 'TradePay receipt · permits', ref: 'TP-27114122', from: 'TradePay', meta: <DhAmount value={permitPaid} /> },
-    { id: 'r-duty', abbr: 'DU', title: 'Customs duty receipt', ref: 'DR-27-0049310', from: 'Dubai Customs · duty account', meta: <DhAmount value={dutyPaid} /> },
   ];
   const shipping: DL[] = docs.filter(d => d.status === 'read').map((d, i) => ({ id: `s-${i}`, abbr: ({ 'Bill of lading': 'BL', 'Commercial invoice': 'CI', 'Packing list': 'PL', 'Certificate of origin': 'COO', 'Cargo manifest': 'MAN' } as Record<string, string>)[d.type] ?? 'DOC', title: d.type, ref: d.name, from: d.source }));
   const all = [...issued, ...receipts, ...shipping];
@@ -115,7 +139,7 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
 
   const stages = [
     { t: 'eToken issued', s: 'ET-27-0091602' },
-    { t: 'Trucks booked', s: `${plates.length} trucks · Al Bahar Transport` },
+    { t: plates.length > 1 ? 'Trucks booked' : 'Truck booked', s: `${plates.length} truck${plates.length > 1 ? 's' : ''} · Al Bahar Transport` },
     { t: 'At the port gate', s: slot },
     { t: 'Delivered', s: 'Your warehouse, Al Quoz 3' },
   ];
@@ -131,11 +155,11 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
           <p className="ai-rise text-[15px] text-[#40484f] mt-1 max-w-[620px]" style={{ animationDelay: '.5s' }}>
             DO released, permits approved, customs cleared and eToken issued for {ACTIVE.c.caseId}. We'll keep tracking your delivery until the containers reach your warehouse.
           </p>
-          <div className="ai-rise flex flex-wrap justify-center gap-2 mt-4" style={{ animationDelay: '.65s' }}>
+          {tracks ? <div className="ai-rise w-full max-w-[760px] mt-5" style={{ animationDelay: '.65s' }}>{tracks}</div> : <div className="ai-rise flex flex-wrap justify-center gap-2 mt-4" style={{ animationDelay: '.65s' }}>
             {['Vessel Operations', 'Trade+', 'Integrated Clearance', 'Cargo Waves'].map(t => (
               <span key={t} className="inline-flex items-center gap-[6px] h-[32px] px-3 rounded-full text-[14px] bg-white" style={{ border: '1px solid #cdebd8', color: '#17703a', fontWeight: 600 }}><Icon name="check" size={14} strokeWidth={2.6} />{t}</span>
             ))}
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -143,16 +167,16 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
       <div className="rounded-[16px] border bg-white p-4 sm:p-5" style={{ borderColor: C.border }}>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <p className="text-[16px] text-[#111838] flex items-center gap-2" style={{ fontWeight: 600 }}><span className="size-[8px] rounded-full bg-[#28a745] ai-live" />We're tracking your delivery</p>
+            <p className="text-[16px] text-[#111838] flex items-center gap-2" style={{ fontWeight: 600 }}><span className="size-[8px] rounded-full bg-[#28a745] ai-live" />{loading ? 'Getting the latest from Cargo Waves' : "We're tracking your delivery"}{loading && <span className="ai-dots ml-1"><i /><i /><i /></span>}</p>
             <p className="text-[14px] text-[#4f5a78]">Delivery window {slot} · we'll update you at every step</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[14px] text-[#4f5a78]">Notify me by</span>
-            {(['sms', 'email'] as const).map(k => (
+            {(['whatsapp', 'email'] as const).map(k => (
               <button key={k} type="button" role="switch" aria-checked={notify[k]} onClick={() => setNotify(n => ({ ...n, [k]: !n[k] }))}
                 className="inline-flex items-center gap-[6px] h-[32px] px-3 rounded-full text-[14px] border transition-colors"
                 style={{ borderColor: notify[k] ? C.blue : '#d5ddea', background: notify[k] ? '#eef4ff' : '#fff', color: notify[k] ? C.blue : '#4f5a78', fontWeight: 600 }}>
-                {notify[k] && <Icon name="check" size={13} strokeWidth={2.6} />}{k === 'sms' ? 'SMS' : 'Email'}
+                {notify[k] && <Icon name="check" size={13} strokeWidth={2.6} />}{k === 'whatsapp' ? 'WhatsApp' : 'Email'}
               </button>
             ))}
           </div>
@@ -161,15 +185,15 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
         {/* Animated route */}
         <div className="relative mt-5 mb-2 h-[44px]">
           <span className="absolute left-[18px] right-[18px] top-[21px] h-[3px] rounded-full" style={{ backgroundImage: 'repeating-linear-gradient(90deg,#c9d6ee 0 10px,transparent 10px 18px)' }} />
-          <span className="absolute left-[18px] top-[21px] h-[3px] rounded-full transition-all duration-1000" style={{ width: `calc(${(stage / (stages.length - 1)) * 100}% - ${(stage / (stages.length - 1)) * 36}px)`, background: 'linear-gradient(90deg,#28a745,#5fd17a)' }} />
-          <span className="absolute top-0 size-[44px] rounded-full flex items-center justify-center text-white transition-all duration-1000 ai-bob"
+          <span className={`absolute left-[18px] top-[21px] h-[3px] rounded-full transition-all duration-[2000ms] ease-in-out ${loading ? 'ai-load-bar' : ''}`} style={{ width: `calc(${(stage / (stages.length - 1)) * 100}% - ${(stage / (stages.length - 1)) * 36}px)`, background: 'linear-gradient(90deg,#28a745,#5fd17a)' }} />
+          <span className="absolute top-0 size-[44px] rounded-full flex items-center justify-center text-white transition-all duration-[2000ms] ease-in-out ai-bob"
             style={{ left: `calc(${(stage / (stages.length - 1)) * 100}% - ${(stage / (stages.length - 1)) * 44}px)`, background: 'linear-gradient(135deg,#1360d2,#4f8ff7)', boxShadow: '0 10px 22px -10px rgba(19,96,210,.7)' }}>
             <Icon name="truck" size={20} />
           </span>
         </div>
         <ol className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {stages.map((st, i) => (
-            <li key={st.t} className="min-w-0">
+            <li key={st.t} className="min-w-0 transition-opacity duration-700" style={{ opacity: live && i > stage + 1 ? 0.55 : 1 }}>
               <span className="flex items-center gap-2">
                 <span className="size-[22px] rounded-full flex items-center justify-center flex-shrink-0" style={{ background: i <= stage ? '#28a745' : '#fff', border: i <= stage ? 'none' : '2px dashed #c9d4ec', color: '#fff' }}>{i <= stage && <Icon name="check" size={12} strokeWidth={2.8} />}</span>
                 <span className="text-[14px] text-[#111838]" style={{ fontWeight: i === stage ? 700 : 600 }}>{st.t}</span>
@@ -188,10 +212,10 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
         </div>
       </div>
 
-      {/* Documents to download */}
-      <div className="rounded-[16px] border bg-white p-4 sm:p-5" style={{ borderColor: C.border }}>
-        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-4 mb-3 items-start">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
+      {/* Documents to download (in the chat, the agent introduces the QR card itself) */}
+      {!live && <div className={`rounded-[16px] border bg-white p-4 sm:p-5 ${brief ? 'justify-self-start' : ''}`} style={{ borderColor: C.border }}>
+        <div className={`grid grid-cols-1 ${brief ? '' : 'md:grid-cols-[minmax(0,1fr)_auto] mb-3'} gap-4 items-start`}>
+        {!brief && <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <p className="text-[16px] text-[#111838]" style={{ fontWeight: 600 }}>Documents for this import</p>
             <p className="text-[14px] text-[#4f5a78]">{all.length} documents · {done ? `${done} downloaded` : 'all stored with your case record'}</p>
@@ -204,7 +228,7 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
           ) : (
             <Btn icon="download" onClick={zipAll}>{done === all.length ? 'Download all again' : 'Download all (ZIP)'}</Btn>
           )}
-        </div>
+        </div>}
         {/* Scan to download on a phone */}
         <div className="flex items-center gap-3 rounded-[14px] p-3 border" style={{ borderColor: '#dbe6f7', background: 'linear-gradient(135deg,#f6f9ff,#ffffff)' }}>
           <span className="rounded-[10px] p-[6px] bg-white border flex-shrink-0" style={{ borderColor: '#e3e8f3' }}>
@@ -216,6 +240,7 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
           </span>
         </div>
         </div>
+        {!brief && <>
         <p className="text-[14px] text-[#111838] mb-2" style={{ fontWeight: 600 }}>Issued on this journey</p>
         <ul className="grid grid-cols-1 lg:grid-cols-2 gap-2">{issued.map(d => <Row key={d.id} d={d} />)}</ul>
         <p className="text-[14px] text-[#111838] mt-4 mb-2" style={{ fontWeight: 600 }}>Payment receipts</p>
@@ -224,8 +249,9 @@ export function ImportComplete({ summary }: { summary: CompletionSummary }) {
           <p className="text-[14px] text-[#111838] mt-4 mb-2" style={{ fontWeight: 600 }}>Your shipping documents</p>
           <ul className="grid grid-cols-1 lg:grid-cols-2 gap-2">{shipping.map(d => <Row key={d.id} d={d} />)}</ul>
         </>}
-      </div>
-      <Pill tone="ai" className="justify-self-start">Final step · audit log below</Pill>
+        </>}
+      </div>}
+      {!brief && <Pill tone="ai" className="justify-self-start">Final step · audit log below</Pill>}
     </div>
   );
 }

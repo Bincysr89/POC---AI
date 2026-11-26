@@ -183,11 +183,6 @@ export function MyAgentsGrid({ ask }: { ask: Ask }) {
           </div>
         </div>
       ))}
-      <button type="button" onClick={() => ask('build-agent', 'Build an AI agent to automate my work')} className="ai-agent-new rounded-[16px] p-4 flex flex-col items-center justify-center text-center gap-2 min-h-[176px]">
-        <span className="size-[44px] rounded-full flex items-center justify-center text-[#1360d2] bg-white shadow-sm"><Icon name="plus" size={20} /></span>
-        <span className="text-[15px] text-[#0e1b3d]" style={{ fontWeight: 600 }}>Build an agent</span>
-        <span className="text-[14px] text-[#4f5a78] max-w-[200px]">Describe a task in plain words; it runs every time</span>
-      </button>
     </div>
   );
 }

@@ -10,7 +10,7 @@ export default function ImportPage() {
   const loc = useLocation();
   const state = loc.state as { files?: string[]; containers?: string[]; bl?: string } | null;
   const src = params.get('source');
-  const source: ImportSource = src === 'containers' || src === 'do' || src === 'clearance' ? src : 'documents';
+  const source: ImportSource = src === 'containers' || src === 'do' || src === 'documents' ? src : 'start';
   const startAt = params.get('start') === 'journey' ? 'journey' : undefined;
   const home = () => navigate(`/landing/${agent}`);
   return (
