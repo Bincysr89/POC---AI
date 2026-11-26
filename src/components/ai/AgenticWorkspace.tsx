@@ -533,7 +533,12 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
           </div>
           </>
         ) : (
-          <div className="w-full lg:w-[70%] mx-auto px-4 sm:px-6 flex flex-col min-h-[calc(100vh-110px)] pt-5">
+          <>
+          {/* same soft blue backdrop as the AI home, fixed behind the conversation */}
+          <div className="ai-chat-bg" aria-hidden>
+            <span className="ai-blob b1" /><span className="ai-blob b2" /><span className="ai-blob b3" /><span className="ai-blob b4" />
+          </div>
+          <div className="relative z-[1] w-full lg:w-[70%] mx-auto px-4 sm:px-6 flex flex-col min-h-[calc(100vh-110px)] pt-5">
             {tabs && <div className="flex justify-center mb-4">{tabs}</div>}
             <div className="flex items-center justify-between gap-3 pb-3 border-b" style={{ borderColor: C.border }}>
               <button type="button" onClick={reset} className="inline-flex items-center gap-1 text-[14px] text-[#1360d2] hover:underline" style={{ fontWeight: 500 }}>
@@ -581,6 +586,7 @@ export default function AgenticWorkspace({ onOpenDashboard, tabs }: { onOpenDash
               <Composer onSend={sendText} onFiles={sendFiles} onAct={act} autoFocus />
             </div>
           </div>
+          </>
         )}
     </div>
     </AgentsContext.Provider>

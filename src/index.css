@@ -503,3 +503,17 @@ label {
 @keyframes ai-open-dim { from { opacity: 0; } to { opacity: 1; } }
 .ai-open-bot { animation: ai-open-bot .55s cubic-bezier(.22,1,.36,1) both; }
 @keyframes ai-open-bot { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
+
+/* Conversation view: same light-glass backdrop as the AI home, fixed behind the chat */
+.ai-chat-bg {
+  position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  background:
+    radial-gradient(80% 60% at 50% 0%, #e4eeff 0%, rgba(228,238,255,0) 70%),
+    linear-gradient(180deg, #f3f7ff 0%, #f6f8fc 100%);
+}
+.ai-chat-bg .ai-blob { z-index: 0; will-change: transform; }
+.ai-chat-bg .ai-blob.b1 { animation: ai-drift-1 16s ease-in-out infinite; }
+.ai-chat-bg .ai-blob.b2 { animation: ai-drift-2 20s ease-in-out infinite; }
+.ai-chat-bg .ai-blob.b3 { animation: ai-drift-3 24s ease-in-out infinite; background: #a9c8ff; bottom: auto; top: 45%; }
+.ai-chat-bg .ai-blob.b4 { animation: ai-drift-4 19s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .ai-chat-bg .ai-blob { animation: none; } }
